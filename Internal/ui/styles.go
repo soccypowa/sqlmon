@@ -36,4 +36,12 @@ var styleSeparator = lipgloss.NewStyle().Foreground(colorBorder)
 // Status color styles
 var styleGood = lipgloss.NewStyle().Bold(true).Foreground(colorGreen)
 var styleWarn = lipgloss.NewStyle().Bold(true).Foreground(colorYellow)
-var StyleCrit = lipgloss.NewStyle().Bold(true).Foreground(colorRed)
+var styleBad = lipgloss.NewStyle().Bold(true).Foreground(colorRed)
+
+var styleLoading = lipgloss.NewStyle().Italic(true).Foreground(colorYellow)
+
+var styleErrText = lipgloss.NewStyle().Bold(true).Foreground(colorRed)
+
+var styleHeaderCell = lipgloss.NewStyle().Bold(true).Foreground(colorCyan)
+
+var styleCell = lipgloss.NewStyle().Foreground(colorWhite)

@@ -18,10 +18,10 @@ func (m Model) View() string {
 	}
 
 	return strings.Join([]string{
-		renderHeader(m.width),
+		m.renderHeader(),
 		renderSeparator(m.width),
-		renderViewport(m),
-		renderFooter(m),
+		m.renderViewport(),
+		m.renderFooter(),
 	}, "\n")
 
 }
@@ -30,18 +30,31 @@ func (m Model) View() string {
 // string, stripping ANSI escape codes. Always use it instead of
 // len() when working with styled strings.
 
-func renderHeader(width int) string {
+func (m Model) renderHeader() string {
 	left := styleTitle.Render(" ⬡ SQL SERVER ACTIVITY MONITOR")
+
+	// Live status indicator
+	var statusIndicator string
+	if m.loading {
+		statusIndicator = styleLoading.Render("  ⟳ refreshing…")
+	} else if m.err != nil {
+		statusIndicator = styleErrText.Render("  ✗ error")
+	} else if !m.fetchedAt.IsZero() {
+		ts := m.fetchedAt.Format("15:04:05")
+		statusIndicator = styleDim.Render("  ✓ updated " + ts)
+	}
+
+	left = left + statusIndicator
 	right := styleSubtitle.Render("Lesson 2 style layout")
 
-	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
+	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 0 {
 		gap = 0
 	}
 
-	content := left + strings.Repeat(" ", gap) + right
-
-	return styleHeader.Width(width).Render(content)
+	return styleHeader.Width(m.width).Render(
+		left + strings.Repeat(" ", gap) + right,
+	)
 }
 
 func renderSeparator(width int) string {
@@ -55,7 +68,7 @@ func renderSeparator(width int) string {
 // border on top of whatever string the viewport returns. This is the
 // core Lipgloss composition pattern — styles wrap other content.
 
-func renderViewport(m Model) string {
+func (m Model) renderViewport() string {
 	// The scroll percentage shown in the top-right corner of the border.
 	pct := fmt.Sprintf("%3.f%%", m.viewPort.ScrollPercent()*100)
 	pctStyled := styleDim.Render(pct)
@@ -65,7 +78,7 @@ func renderViewport(m Model) string {
 	)
 }
 
-func renderFooter(m Model) string {
+func (m Model) renderFooter() string {
 	help := " [q] quit [↑↓ / PgUp PgDn] scroll [g/G] top/bottom"
 	size := fmt.Sprintf("terminal: %d x %d", m.width, m.height)
 
