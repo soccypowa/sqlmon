@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/url"
 	"time"
 
 	_ "github.com/microsoft/go-mssqldb"
@@ -44,6 +45,17 @@ type Client struct {
 //	sqlserver://myserver?trusted_connection=true   (Windows auth)
 
 func New(connStr string) (*Client, error) {
+	u, err := url.Parse(connStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid connection string: %v", err)
+	}
+	q := u.Query()
+	if q.Get("app name") == "" {
+		q.Set("app name", "sqlmon")
+	}
+	u.RawQuery = q.Encode()
+	connStr = u.String()
+
 	db, err := sql.Open("sqlserver", connStr)
 	if err != nil {
 		return nil, fmt.Errorf("could not open connection: %v", err)
