@@ -22,6 +22,7 @@ func (m Model) View() string {
 
 	return strings.Join([]string{
 		m.renderHeader(),
+		m.renderMetricsBar(),
 		renderSeparator(m.width),
 		panel,
 		m.renderFooter(),
@@ -36,6 +37,10 @@ func (m Model) View() string {
 func (m Model) renderHeader() string {
 	left := styleTitle.Render(" ⬡ SQL SERVER ACTIVITY MONITOR")
 
+	if m.serverName != "" {
+		left += styleSubtitle.Render(" " + m.serverName)
+	}
+
 	// Live status indicator
 	var statusIndicator string
 	if m.loading {
@@ -47,8 +52,8 @@ func (m Model) renderHeader() string {
 		statusIndicator = styleDim.Render("  ✓ updated " + ts)
 	}
 
-	left = left + statusIndicator
-	right := styleSubtitle.Render("Lesson 4 - tabs")
+	left += statusIndicator
+	right := styleSubtitle.Render("sqlmon  ")
 
 	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 0 {
@@ -58,6 +63,60 @@ func (m Model) renderHeader() string {
 	return styleHeader.Width(m.width).Render(
 		left + strings.Repeat(" ", gap) + right,
 	)
+}
+
+// Renders a single line of key health counters:
+//
+//   CPU  42% [████████░░░░]  │  Sessions 38  │  Active 5  │  Blocked 0  │  PLE 4821s  │  Batch/s 1204
+//
+// DESIGN DECISIONS
+//
+//   1. One line, not a box.
+//      The metrics bar is scanned quickly — a dense single line is
+//      faster to read than a bordered panel. It sits between the
+//      header and the data panel so it's always visible regardless
+//      of which tab is active or how far the user has scrolled.
+//
+//   2. Colour thresholds encode the "normal / watch / act" states.
+//      Green  → healthy, no action needed
+//      Yellow → worth watching, may need attention
+//      Red    → act now — threshold functions in styles.go
+//
+//   3. The CPU bar gives magnitude at a glance without reading a number.
+//      The % label is there for precision; the bar is for fast scanning.
+
+func (m Model) renderMetricsBar() string {
+	mx := m.metrics
+
+	sep := styleMetricSep.Render("  |  ")
+
+	cpuNum := cpuStyle(mx.SQLCPUPct).Render(fmt.Sprintf("%3d%%", mx.SQLCPUPct))
+	cpuBarS := cpuBar(mx.SQLCPUPct, 12)
+	cpuPart := styleMetricsLabel.Render("cpu") + cpuNum + " [" + cpuBarS + "]"
+
+	sessPart := styleMetricsLabel.Render("Sessions ") +
+		styleCell.Render(fmt.Sprintf("%d", mx.TotalSessions))
+
+	activPart := styleMetricsLabel.Render("Active ") +
+		styleCell.Render(fmt.Sprintf("%d", mx.ActiveRequests))
+
+	blockedPart := styleMetricsLabel.Render("Blocked ") +
+		blockStyle(mx.BlockedSessions).Render(fmt.Sprintf("%d", mx.BlockedSessions))
+
+	plePart := styleMetricsLabel.Render("PLE ") +
+		pleStyle(mx.PageLifeExp).Render(fmt.Sprintf("%ds", mx.PageLifeExp))
+
+	batchPart := styleMetricsLabel.Render("Batch/s ") +
+		styleCell.Render(fmt.Sprintf("%.0f", mx.BatchReqPerSec))
+
+	content := " " + cpuPart +
+		sep + sessPart +
+		sep + activPart +
+		sep + blockedPart +
+		sep + plePart +
+		sep + batchPart
+
+	return styleMetricBar.Width(m.width).Render(content)
 }
 
 // Renders the three tab labels using active/inactive styles.
@@ -90,7 +149,7 @@ func renderSeparator(width int) string {
 }
 
 func (m Model) renderFooter() string {
-	help := " [q] quit   [r] refresh   [tab/1-3] switch   [↑↓] scroll"
+	help := fmt.Sprintf("  [q] quit   [r] refresh   [tab/1-3] switch   [↑↓] scroll   auto: %s", m.interval.String())
 	//size := fmt.Sprintf("terminal: %d x %d", m.width, m.height)
 
 	var info string

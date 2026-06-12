@@ -29,8 +29,7 @@ const (
 	//   1  thin separator line
 	//   1  footer bar
 	//   2  viewport border (top + bottom)
-	chromeHeight    = 8 // Borde vara 7 enligt exemplet
-	refreshInterval = 5 * time.Second
+	chromeHeight = 10 // Borde vara 9 enligt exemplet
 )
 
 // fetchDoneMsg is sent by fetchSessionsCmd when the query completes
@@ -39,6 +38,7 @@ type fetchDoneMsg struct {
 	sessions  []db.Session
 	waits     []db.WaitStat
 	queries   []db.ExpensiveQuery
+	metrics   db.ServerMetrics
 	err       error
 	fetchedAt time.Time
 }
@@ -53,25 +53,31 @@ type tickMsg time.Time
 type Model struct {
 	width     int
 	height    int
+	viewPort  viewport.Model // scrollable content pane
 	activeTab Tab
 	//data
-	sessions  []db.Session
-	waits     []db.WaitStat
-	queries   []db.ExpensiveQuery
-	client    *db.Client
-	fetchedAt time.Time
+	sessions []db.Session
+	waits    []db.WaitStat
+	queries  []db.ExpensiveQuery
+	metrics  db.ServerMetrics
+	//config
+	client     *db.Client
+	serverName string
+	interval   time.Duration
 	//stateflags
-	loading  bool           // true while a query is in flight
-	err      error          // last fetch error (nil = healthy)
-	viewPort viewport.Model // scrollable content pane
+	fetchedAt time.Time
+	loading   bool  // true while a query is in flight
+	err       error // last fetch error (nil = healthy)
 }
 
 // NewModel constructs the initial model.
-func Newmodel(client *db.Client) Model {
+func Newmodel(client *db.Client, serverName string, interval time.Duration) Model {
 	return Model{
-		client:   client,
-		loading:  true,
-		viewPort: viewport.New(0, 0),
+		client:     client,
+		serverName: serverName,
+		interval:   interval,
+		loading:    true,
+		viewPort:   viewport.New(0, 0),
 	}
 }
 
@@ -81,13 +87,43 @@ func Newmodel(client *db.Client) Model {
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		fetchAllCmd(m.client),
-		tickCmd(),
+		tickCmd(m.interval),
 	)
 }
 
 // KEY IDEA: a tea.Cmd is just a func() tea.Msg. Bubble Tea runs it
 // in a goroutine. When it returns, the Msg is sent into Update().
 // The DB call can take 2 seconds and the UI stays fully responsive.
+
+// fetchAllCmd — now calls four queries, still in one goroutine.
+//
+// TRADE-OFF DISCUSSION (as promised in Lesson 4):
+//
+// Sequential (what we do):
+//   Simple, one Msg, atomic UI update. Fine when queries take <100 ms
+//   each — which is true for these DMV queries on a healthy server.
+//
+// Parallel alternative (what you'd do if one query was slow):
+//
+//   type sessResult struct { data []db.Session; err error }
+//   type metricsResult struct { data db.ServerMetrics; err error }
+//
+//   func fetchAllCmd(client *db.Client) tea.Cmd {
+//       return func() tea.Msg {
+//           sessCh    := make(chan sessResult, 1)
+//           metricsCh := make(chan metricsResult, 1)
+//
+//           go func() { s, err := client.GetSessions(ctx); sessCh <- sessResult{s, err} }()
+//           go func() { m, err := client.GetMetrics(ctx);  metricsCh <- metricsResult{m, err} }()
+//
+//           sr := <-sessCh
+//           mr := <-metricsCh
+//           return fetchDoneMsg{sessions: sr.data, metrics: mr.data, ...}
+//       }
+//   }
+//
+// For this app, sequential is the right default. Add parallelism only
+// when profiling shows a specific query is the bottleneck.
 
 func fetchAllCmd(client *db.Client) tea.Cmd {
 	return func() tea.Msg {
@@ -108,11 +144,16 @@ func fetchAllCmd(client *db.Client) tea.Cmd {
 		if err != nil {
 			return fetchDoneMsg{err: err, fetchedAt: time.Now()}
 		}
+		metrics, err := client.GetMetrics(ctx)
+		if err != nil {
+			return fetchDoneMsg{err: err, fetchedAt: time.Now()}
+		}
 
 		return fetchDoneMsg{
 			sessions:  sessions,
 			waits:     waits,
 			queries:   queries,
+			metrics:   metrics,
 			err:       err,
 			fetchedAt: time.Now(),
 		}
@@ -126,8 +167,8 @@ func fetchAllCmd(client *db.Client) tea.Cmd {
 //   A time.Ticker runs on its own goroutine and would require a
 //   channel + select. tea.Tick integrates neatly with the Msg loop.
 
-func tickCmd() tea.Cmd {
-	return tea.Tick(refreshInterval, func(t time.Time) tea.Msg {
+func tickCmd(interval time.Duration) tea.Cmd {
+	return tea.Tick(interval, func(t time.Time) tea.Msg {
 		return tickMsg(t)
 	})
 }
@@ -160,6 +201,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.sessions = msg.sessions
 			m.waits = msg.waits
 			m.queries = msg.queries
+			m.metrics = msg.metrics
 			m.fetchedAt = msg.fetchedAt
 		}
 		m.viewPort.SetContent(m.buildContent())
@@ -168,7 +210,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		m.loading = true
 		m.viewPort.SetContent(m.buildContent())
-		cmds = append(cmds, fetchAllCmd(m.client), tickCmd())
+		cmds = append(cmds, fetchAllCmd(m.client), tickCmd(m.interval))
 
 	// When a key is pressed
 	case tea.KeyMsg:

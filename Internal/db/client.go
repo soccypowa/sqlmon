@@ -41,6 +41,15 @@ type ExpensiveQuery struct {
 	LastExecution  time.Time
 }
 
+type ServerMetrics struct {
+	SQLCPUPct       int
+	TotalSessions   int
+	ActiveRequests  int
+	BlockedSessions int
+	PageLifeExp     int64
+	BatchReqPerSec  float64
+}
+
 type Client struct {
 	db *sql.DB
 }
@@ -257,4 +266,52 @@ ORDER BY qs.total_worker_time DESC`
 		out = append(out, eq)
 	}
 	return out, rows.Err()
+}
+
+func (c *Client) GetMetrics(ctx context.Context) (ServerMetrics, error) {
+	var m ServerMetrics
+	const cpuQ = `
+SELECT TOP 1
+    record.value(
+        '(./Record/SchedulerMonitorEvent/SystemHealth/ProcessUtilization)[1]',
+        'int'
+    ) AS sql_cpu_pct
+FROM (
+    SELECT CONVERT(XML, record) AS record
+    FROM   sys.dm_os_ring_buffers
+    WHERE  ring_buffer_type = N'RING_BUFFER_SCHEDULER_MONITOR'
+      AND  record LIKE '%<SystemHealth>%'
+) AS ring
+ORDER BY record.value('(./Record/@id)[1]', 'bigint') DESC`
+
+	_ = c.db.QueryRowContext(ctx, cpuQ).Scan(&m.SQLCPUPct) // Warför hanteras inte fel här?
+
+	const sessQ = `
+SELECT
+    COUNT(*)                                                   AS total,
+    SUM(CASE WHEN r.session_id      IS NOT NULL THEN 1 ELSE 0 END) AS active,
+    SUM(CASE WHEN r.blocking_session_id > 0     THEN 1 ELSE 0 END) AS blocked
+FROM      sys.dm_exec_sessions  AS s
+LEFT JOIN sys.dm_exec_requests  AS r ON s.session_id = r.session_id
+WHERE s.is_user_process = 1`
+
+	_ = c.db.QueryRowContext(ctx, sessQ).Scan(&m.TotalSessions, &m.ActiveRequests, &m.BlockedSessions)
+
+	const pleQ = `
+SELECT ISNULL(cntr_value, 0)
+FROM   sys.dm_os_performance_counters
+WHERE  counter_name = 'Page life expectancy'
+  AND  object_name  LIKE '%Buffer Manager%'`
+
+	_ = c.db.QueryRowContext(ctx, pleQ).Scan(&m.PageLifeExp)
+
+	const batchQ = `
+SELECT ISNULL(cntr_value, 0)
+FROM   sys.dm_os_performance_counters
+WHERE  counter_name = 'Batch Requests/sec'
+  AND  object_name  LIKE '%SQL Statistics%'`
+
+	_ = c.db.QueryRowContext(ctx, batchQ).Scan(&m.BatchReqPerSec)
+
+	return m, nil
 }

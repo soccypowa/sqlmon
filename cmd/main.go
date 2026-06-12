@@ -4,6 +4,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/Soccypowa/sqlmon/Internal/db"
 	"github.com/Soccypowa/sqlmon/Internal/ui"
@@ -12,28 +14,29 @@ import (
 
 func main() {
 	connStr := flag.String("conn", "", "SQL Server connection string\n"+
-		" e.g. sqlserver://sa:password@localhos\n"+
-		" or set SQLMON_CONN environment variable")
+		"  sqlserver://user:password@host[:port][/instance]\n"+
+		"  sqlserver://host?trusted_connection=true  (Windows auth)")
+	interval := flag.Duration("interval", 5*time.Second,
+		"How often to refresh data (e.g. 5s, 10s, 30s).")
 	flag.Parse()
 
-	//fallback to env variable so connstr is not mandatory in dev
 	if *connStr == "" {
-		*connStr = os.Getenv("SQLMON_CONN")
-	}
-
-	if *connStr == "" {
-		fmt.Fprintln(os.Stderr, "Error: provide --conn or set SQLMON_CONN")
+		fmt.Fprintln(os.Stderr, "Error: provide --conn")
 		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "Examples:")
-		fmt.Fprintln(os.Stderr, `  go run ./cmd --conn "sqlserver://sa:password@localhost"`)
-		fmt.Fprintln(os.Stderr, `  go run ./cmd --conn "sqlserver://myserver?trusted_connection=true"`)
+		fmt.Fprintln(os.Stderr, "Usage:")
+		fmt.Fprintln(os.Stderr, `  sqlmon --conn "sqlserver://sa:password@localhost"`)
+		fmt.Fprintln(os.Stderr, `  sqlmon --conn "sqlserver://myserver:1433" --interval 10s`)
+		fmt.Fprintln(os.Stderr, `  sqlmon --conn "sqlserver://myserver?trusted_connection=true"`)
 		os.Exit(1)
 	}
+
+	// Derive servername
+	name := extractHost(*connStr)
 
 	// Connect — this is blocking and intentionally runs before the
 	// TUI starts. A clear error here is much friendlier than a
 	// confusing error inside the running UI.
-	fmt.Fprintln(os.Stderr, "connecting...")
+	fmt.Fprintf(os.Stderr, "connecting to %s...\n", name)
 	client, err := db.New(*connStr)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "\nCould not connect: %v\n\n", err)
@@ -47,7 +50,7 @@ func main() {
 	defer client.Close()
 
 	p := tea.NewProgram(
-		ui.Newmodel(client),
+		ui.Newmodel(client, name, *interval),
 		tea.WithAltScreen(),
 		tea.WithMouseCellMotion(),
 	)
@@ -57,4 +60,33 @@ func main() {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
+}
+
+func extractHost(connStr string) string {
+	s := connStr
+
+	// Strip Scheme
+	if i := strings.Index(s, "://"); i >= 0 {
+		s = s[i+3:]
+	}
+
+	// Strip user:pass@ - find the last @ before any / or ?
+	for i := len(s) - 1; i >= 0; i-- {
+		if s[i] == '@' {
+			s = s[i+1:]
+			break
+		}
+		if s[i] == '/' || s[i] == '?' {
+			break
+		}
+	}
+	// Strip query string
+	if i := strings.IndexByte(s, '?'); i >= 0 {
+		s = s[:i]
+	}
+
+	if s == "" {
+		return "SQL Server"
+	}
+	return s
 }
