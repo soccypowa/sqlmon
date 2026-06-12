@@ -17,10 +17,13 @@ func (m Model) View() string {
 		return ""
 	}
 
+	panelInner := m.renderTabBar() + "\n" + m.viewPort.View()
+	panel := stylePanel.Width(m.width - 2).Render(panelInner)
+
 	return strings.Join([]string{
 		m.renderHeader(),
 		renderSeparator(m.width),
-		m.renderViewport(),
+		panel,
 		m.renderFooter(),
 	}, "\n")
 
@@ -45,7 +48,7 @@ func (m Model) renderHeader() string {
 	}
 
 	left = left + statusIndicator
-	right := styleSubtitle.Render("Lesson 2 style layout")
+	right := styleSubtitle.Render("Lesson 4 - tabs")
 
 	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 0 {
@@ -57,35 +60,64 @@ func (m Model) renderHeader() string {
 	)
 }
 
+// Renders the three tab labels using active/inactive styles.
+// The active tab uses an inverted colour scheme (dark text on cyan)
+// so it stands out clearly.
+
+func (m Model) renderTabBar() string {
+	labels := []string{
+		"[1] Processes",
+		"[2] Wait Stats",
+		"[3] Expensive Queries",
+	}
+	var rendered []string
+	for i, label := range labels {
+		if Tab(i) == m.activeTab {
+			rendered = append(rendered, styleActiveTab.Render(label))
+		} else {
+			rendered = append(rendered, styleInactiveTab.Render(label))
+		}
+	}
+
+	// Underline separator below the tabs
+	tabRow := strings.Join(rendered, "")
+	underLine := styleSeparator.Render(strings.Repeat("-", m.width-4))
+	return tabRow + "\n" + underLine
+}
+
 func renderSeparator(width int) string {
 	return styleSeparator.Render(strings.Repeat("-", width))
 }
 
-// The viewport bubble handles all scroll logic internally.
-// We just wrap it with the panel border style.
-//
-// KEY IDEA: stylePanel.Render(m.viewport.View()) layers the rounded
-// border on top of whatever string the viewport returns. This is the
-// core Lipgloss composition pattern — styles wrap other content.
-
-func (m Model) renderViewport() string {
-	// The scroll percentage shown in the top-right corner of the border.
-	pct := fmt.Sprintf("%3.f%%", m.viewPort.ScrollPercent()*100)
-	pctStyled := styleDim.Render(pct)
-
-	return stylePanel.Width(m.width - 2).Render(
-		m.viewPort.View() + "\n" + strings.Repeat(" ", m.viewPort.Width-lipgloss.Width(pctStyled)) + pctStyled,
-	)
-}
-
 func (m Model) renderFooter() string {
-	help := " [q] quit [↑↓ / PgUp PgDn] scroll [g/G] top/bottom"
-	size := fmt.Sprintf("terminal: %d x %d", m.width, m.height)
+	help := " [q] quit   [r] refresh   [tab/1-3] switch   [↑↓] scroll"
+	//size := fmt.Sprintf("terminal: %d x %d", m.width, m.height)
 
-	gap := m.width - lipgloss.Width(help) - lipgloss.Width(size)
+	var info string
+	switch m.activeTab {
+	case TabProcesses:
+		blocked := 0
+		for _, s := range m.sessions {
+			if s.BlockedBy > 0 {
+				blocked++
+			}
+		}
+		if blocked > 0 {
+			info = fmt.Sprintf("sessions %d %s ",
+				len(m.sessions),
+				styleBad.Render(fmt.Sprintf("blocked: %d", blocked)))
+		} else {
+			info = fmt.Sprintf("sessions: %d ", len(m.sessions))
+		}
+	case TabWaits:
+		info = fmt.Sprintf("wait types: %d ", len(m.waits))
+	case TabExpensive:
+		info = fmt.Sprintf("cached plans: %d ", len(m.queries))
+	}
+
+	gap := m.width - lipgloss.Width(help) - lipgloss.Width(info)
 	if gap < 0 {
 		gap = 0
 	}
-	content := help + strings.Repeat(" ", gap) + size
-	return styleFooter.Width(m.width).Render(content)
+	return styleFooter.Width(m.width).Render(help + strings.Repeat(" ", gap) + info)
 }

@@ -45,3 +45,8 @@ var styleErrText = lipgloss.NewStyle().Bold(true).Foreground(colorRed)
 var styleHeaderCell = lipgloss.NewStyle().Bold(true).Foreground(colorCyan)
 
 var styleCell = lipgloss.NewStyle().Foreground(colorWhite)
+
+// Tab styles
+var styleActiveTab = lipgloss.NewStyle().Bold(true).Foreground(colorBg).Background(colorCyan).Padding(0, 2)
+var styleInactiveTab = lipgloss.NewStyle().Foreground(colorGray).Padding(0, 2)
+var styleTabBar = lipgloss.NewStyle().Background(colorBgPanel).BorderBottom(true).BorderForeground(colorBorder)

@@ -25,9 +25,24 @@ type Session struct {
 	QueryText    string
 }
 
+type WaitStat struct {
+	WaitType     string
+	WaitingTasks int64
+	WaittimeMs   int64
+	AvgWaitMs    float64
+}
+
+type ExpensiveQuery struct {
+	QueryText      string
+	ExecutionCount int64
+	TotalCPUMs     int64
+	TotalElapsedMs int64
+	AvgCPUMs       float64
+	LastExecution  time.Time
+}
+
 type Client struct {
-	db         *sql.DB
-	ServerName string // displayname set from the connection string
+	db *sql.DB
 }
 
 // New opens a connection pool to SQL Server and verifies it with
@@ -136,7 +151,7 @@ ORDER BY ISNULL(r.total_elapsed_time, 0) DESC`
 	var sessions []Session
 	for rows.Next() {
 		var s Session
-		err := rows.Scan(
+		if err := rows.Scan(
 			&s.SPID,
 			&s.Status,
 			&s.LoginName,
@@ -149,16 +164,97 @@ ORDER BY ISNULL(r.total_elapsed_time, 0) DESC`
 			&s.ElapsedMs,
 			&s.BlockedBy,
 			&s.QueryText,
-		)
-		if err != nil {
+		); err != nil {
 			// Skip malformed rows rather than aborting the whole resulr
 			continue
 		}
 		sessions = append(sessions, s)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating rows: %v", err)
-	}
 
-	return sessions, nil
+	return sessions, rows.Err()
+}
+
+// sys.dm_os_wait_stats is a cumulative counter since last restart
+// (or DBCC SQLPERF('sys.dm_os_wait_stats', CLEAR)).
+// We exclude well-known idle/benign waits so the list shows only
+// waits that represent real contention or resource pressure.
+
+func (c *Client) GetWaitStats(ctx context.Context) ([]WaitStat, error) {
+	const query = `
+SELECT TOP 25
+    wait_type,
+    waiting_tasks_count,
+    wait_time_ms,
+    CASE WHEN waiting_tasks_count = 0 THEN 0.0
+         ELSE CAST(wait_time_ms AS FLOAT) / waiting_tasks_count
+    END AS avg_wait_ms
+FROM sys.dm_os_wait_stats
+WHERE wait_time_ms > 0
+  AND wait_type NOT IN (
+      'SLEEP_TASK','BROKER_TO_FLUSH','BROKER_TASK_STOP','CLR_AUTO_EVENT',
+      'DISPATCHER_QUEUE_SEMAPHORE','FT_IFTS_SCHEDULER_IDLE_WAIT',
+      'HADR_WORK_QUEUE','LAZYWRITER_SLEEP','LOGMGR_QUEUE',
+      'ONDEMAND_TASK_QUEUE','REQUEST_FOR_DEADLOCK_SEARCH','RESOURCE_QUEUE',
+      'SERVER_IDLE_CHECK','SLEEP_DBSTARTUP','SLEEP_DBRECOVER',
+      'SLEEP_MASTERDBREADY','SLEEP_MASTERMDREADY','SLEEP_MASTERUPGRADED',
+      'SLEEP_MSDBSTARTUP','SLEEP_SYSTEMTASK','SLEEP_TEMPDBSTARTUP',
+      'SNI_HTTP_ACCEPT','SP_SERVER_DIAGNOSTICS_SLEEP',
+      'SQLTRACE_BUFFER_FLUSH','WAITFOR','XE_DISPATCHER_WAIT',
+      'XE_TIMER_EVENT','BROKER_EVENTHANDLER','CHECKPOINT_QUEUE',
+      'DBMIRROR_EVENTS_QUEUE','SQLTRACE_INCREMENTAL_FLUSH_SLEEP',
+      'WAIT_XTP_OFFLINE_CKPT_NEW_LOG'
+  )
+ORDER BY wait_time_ms DESC`
+	rows, err := c.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("query wait stats failed: %w", err)
+	}
+	defer rows.Close()
+
+	var out []WaitStat
+	for rows.Next() {
+		var w WaitStat
+		if err := rows.Scan(&w.WaitType, &w.WaitingTasks, &w.WaittimeMs, &w.AvgWaitMs); err != nil {
+			continue
+		}
+		out = append(out, w)
+	}
+	return out, rows.Err()
+}
+
+// sys.dm_exec_query_stats holds aggregate stats for every query plan
+// currently in the plan cache. It resets when a plan is evicted.
+// We order by total_worker_time (CPU) descending so the most
+// expensive queries over their lifetime appear first.
+
+func (c *Client) GetExpensiveQueries(ctx context.Context) ([]ExpensiveQuery, error) {
+	const query = `
+SELECT TOP 25
+    ISNULL(SUBSTRING(t.text, 1, 200), '')   AS query_text,
+    qs.execution_count,
+    qs.total_worker_time   / 1000           AS total_cpu_ms,
+    qs.total_elapsed_time  / 1000           AS total_elapsed_ms,
+    (qs.total_worker_time  / 1000.0) / qs.execution_count AS avg_cpu_ms,
+    qs.last_execution_time
+FROM sys.dm_exec_query_stats AS qs
+CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) AS t
+WHERE qs.execution_count > 0
+ORDER BY qs.total_worker_time DESC`
+
+	rows, err := c.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("query expensive querie failed: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ExpensiveQuery
+	for rows.Next() {
+		var eq ExpensiveQuery
+		if err := rows.Scan(&eq.QueryText, &eq.ExecutionCount, &eq.TotalCPUMs,
+			&eq.TotalElapsedMs, &eq.AvgCPUMs, &eq.LastExecution); err != nil {
+			continue
+		}
+		out = append(out, eq)
+	}
+	return out, rows.Err()
 }

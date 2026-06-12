@@ -10,13 +10,26 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+type Tab int
+
+const (
+	TabProcesses Tab = iota
+	TabWaits
+	TabExpensive
+	tabCount // Always last used for wrap-around arithemtic
+)
+
+func (t Tab) String() string {
+	return [...]string{"Processes", "Wait Stats", "Expensive Queries"}[t]
+}
+
 const (
 	// Lines consumed by chrome outside the viewport:
 	//   1  header bar
 	//   1  thin separator line
 	//   1  footer bar
 	//   2  viewport border (top + bottom)
-	chromeHeight    = 6 // Borde vara 5 enligt exemplet
+	chromeHeight    = 8 // Borde vara 7 enligt exemplet
 	refreshInterval = 5 * time.Second
 )
 
@@ -24,6 +37,8 @@ const (
 // (successfully or not). Update() pattern-matches on this type.
 type fetchDoneMsg struct {
 	sessions  []db.Session
+	waits     []db.WaitStat
+	queries   []db.ExpensiveQuery
 	err       error
 	fetchedAt time.Time
 }
@@ -36,11 +51,14 @@ type tickMsg time.Time
 // so anything the View() needs must live here.
 
 type Model struct {
-	width  int
-	height int
+	width     int
+	height    int
+	activeTab Tab
 	//data
-	client    *db.Client
 	sessions  []db.Session
+	waits     []db.WaitStat
+	queries   []db.ExpensiveQuery
+	client    *db.Client
 	fetchedAt time.Time
 	//stateflags
 	loading  bool           // true while a query is in flight
@@ -50,12 +68,10 @@ type Model struct {
 
 // NewModel constructs the initial model.
 func Newmodel(client *db.Client) Model {
-	vp := viewport.New(0, 0) // real size set on first WindowSizeMsg
-
 	return Model{
 		client:   client,
 		loading:  true,
-		viewPort: vp,
+		viewPort: viewport.New(0, 0),
 	}
 }
 
@@ -64,26 +80,39 @@ func Newmodel(client *db.Client) Model {
 
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
-		fetchSessionCmd(m.client),
+		fetchAllCmd(m.client),
 		tickCmd(),
 	)
 }
 
-// fetchSessionsCmd returns a tea.Cmd that queries the DB in the
-// background and delivers a fetchDoneMsg when it finishes.
-//
 // KEY IDEA: a tea.Cmd is just a func() tea.Msg. Bubble Tea runs it
 // in a goroutine. When it returns, the Msg is sent into Update().
 // The DB call can take 2 seconds and the UI stays fully responsive.
 
-func fetchSessionCmd(client *db.Client) tea.Cmd {
+func fetchAllCmd(client *db.Client) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
 		sessions, err := client.GetSessions(ctx)
+		if err != nil {
+			return fetchDoneMsg{err: err, fetchedAt: time.Now()}
+		}
+
+		waits, err := client.GetWaitStats(ctx)
+		if err != nil {
+			return fetchDoneMsg{err: err, fetchedAt: time.Now()}
+		}
+
+		queries, err := client.GetExpensiveQueries(ctx)
+		if err != nil {
+			return fetchDoneMsg{err: err, fetchedAt: time.Now()}
+		}
+
 		return fetchDoneMsg{
 			sessions:  sessions,
+			waits:     waits,
+			queries:   queries,
 			err:       err,
 			fetchedAt: time.Now(),
 		}
@@ -129,6 +158,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = msg.err
 		if msg.err == nil {
 			m.sessions = msg.sessions
+			m.waits = msg.waits
+			m.queries = msg.queries
 			m.fetchedAt = msg.fetchedAt
 		}
 		m.viewPort.SetContent(m.buildContent())
@@ -137,7 +168,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		m.loading = true
 		m.viewPort.SetContent(m.buildContent())
-		cmds = append(cmds, fetchSessionCmd(m.client), tickCmd())
+		cmds = append(cmds, fetchAllCmd(m.client), tickCmd())
 
 	// When a key is pressed
 	case tea.KeyMsg:
@@ -147,7 +178,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "r": //manual refresh
 			m.loading = true
 			m.viewPort.SetContent(m.buildContent())
-			cmds = append(cmds, fetchSessionCmd(m.client))
+			cmds = append(cmds, fetchAllCmd(m.client))
+		case "tab", "right":
+			m.activeTab = (m.activeTab + 1) % tabCount
+			m.viewPort.GotoTop()
+			m.viewPort.SetContent(m.buildContent())
+		case "shift+tab", "left":
+			m.activeTab = (m.activeTab + tabCount - 1) % tabCount
+			m.viewPort.GotoTop()
+			m.viewPort.SetContent(m.buildContent())
+		case "1":
+			m.setTab(TabProcesses)
+		case "2":
+			m.setTab(TabWaits)
+		case "3":
+			m.setTab(TabExpensive)
 		}
 	}
 
@@ -158,6 +203,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cmds = append(cmds, vpCmd)
 
 	return m, tea.Batch(cmds...)
+}
+
+func (m *Model) setTab(t Tab) {
+	m.activeTab = t
+	m.viewPort.GotoTop()
+	m.viewPort.SetContent(m.buildContent())
 }
 
 // Splitting "build the content string" from "render the frame"
@@ -173,82 +224,174 @@ func (m Model) buildContent() string {
 		return styleLoading.Render("\n  ⟳  Fetching sessions…")
 	}
 
-	content := buildTableHeader(m.viewPort.Width)
-
-	for _, s := range m.sessions {
-		content += buildRow(s, m.viewPort.Width)
+	switch m.activeTab {
+	case TabProcesses:
+		return buildProcessTable(m.sessions, m.viewPort.Width)
+	case TabWaits:
+		return buildWaitsTable(m.waits, m.viewPort.Width)
+	case TabExpensive:
+		return buildExpensiveTable(m.queries, m.viewPort.Width)
 	}
 
-	if len(m.sessions) == 0 {
-		content += styleDim.Render("  (no user sessions)\n")
-	}
-	return content
+	return ""
 }
 
 // Column layout: fixed widths for all but the last (Query) column.
 // We compute query width dynamically from the available viewport width.
-var colWidths = []int{6, 11, 16, 14, 18, 9}
+var processColW = []int{6, 11, 16, 14, 18, 10, 9}
 
-func buildTableHeader(viewWidth int) string {
-	headers := []string{"SPID", "Status", "Login", "Database", "Program", "Wait ms"}
-	row := ""
-	totalFixed := 0
+func buildProcessTable(sessions []db.Session, vw int) string {
+	headers := []string{"SPID", "Status", "Login", "Database", "Program", "Wait Type", "Wait ms"}
+	out := tableHeader(headers, processColW, vw) + tableRule(vw)
 
-	for i, h := range headers {
-		row += styleHeaderCell.Render(padRight(h, colWidths[i])) + " "
-		totalFixed += colWidths[i] + 1
+	if len(sessions) == 0 {
+		return out + styleDim.Render(" (no user sessions)\n")
 	}
-	qw := viewWidth - totalFixed - 2
-	if qw > 0 {
-		row += styleHeader.Render(padRight("Query", qw))
+	for _, s := range sessions {
+		spidStr := padRight(fmt.Sprintf("%d", s.SPID), processColW[0])
+		var spidStyled string
+		if s.BlockedBy > 0 {
+			spidStyled = styleBad.Render(padRight(fmt.Sprintf("%d!", s.SPID), processColW[0]))
+		} else {
+			spidStyled = styleCell.Render(spidStr)
+		}
+
+		statusStr := padRight(s.Status, processColW[1])
+		var statusStyled string
+		switch s.Status {
+		case "running":
+			statusStyled = styleGood.Render(statusStr)
+		case "suspended":
+			statusStyled = styleWarn.Render(statusStr)
+		default:
+			statusStyled = styleDim.Render(statusStr)
+		}
+
+		waitstr := padRight(truncate(s.WaitType, processColW[5]), processColW[5])
+		var waitStyled string
+		if s.WaitType != "" {
+			waitStyled = styleWarn.Render(waitstr)
+		} else {
+			waitStyled = styleDim.Render(waitstr)
+		}
+
+		fixed := totalWidth(processColW)
+		qw := vw - fixed - 2
+
+		row := spidStyled + " " +
+			statusStyled + " " +
+			styleCell.Render(padRight(truncate(s.LoginName, processColW[2]), processColW[2])) + " " +
+			styleDim.Render(padRight(truncate(s.DatabaseName, processColW[3]), processColW[3])) + " " +
+			styleDim.Render(padRight(truncate(s.ProgramName, processColW[4]), processColW[4])) + " " +
+			waitStyled + " " +
+			styleCell.Render(padRight(fmt.Sprintf("%d", s.WaitTimeMs), processColW[6])) + " "
+
+		if qw > 0 {
+			row += styleDim.Render(truncate(cleanQuery(s.QueryText), qw))
+		}
+
+		out += row + "\n"
 	}
-	row += "\n"
-	row += styleSeparator.Render(repeatString("-", viewWidth-2)) + "\n"
-	return row
+	return out
 }
 
-func buildRow(s db.Session, viewWidth int) string {
-	spidStr := padRight(fmt.Sprintf("%d", s.SPID), colWidths[0])
-	statusStr := padRight(s.Status, colWidths[1])
+var waitsColW = []int{38, 14, 14}
 
-	var statusStyled string
-	switch s.Status {
-	case "running":
-		statusStyled = styleGood.Render(statusStr)
-	case "suspended":
-		statusStyled = styleWarn.Render(statusStr)
-	default:
-		statusStyled = styleDim.Render(statusStr)
+func buildWaitsTable(waits []db.WaitStat, vw int) string {
+	headers := []string{"Wait Type", "Tasks", "Total ms"}
+	out := tableHeader(headers, waitsColW, vw) + tableRule(vw)
+
+	if len(waits) == 0 {
+		return out + styleDim.Render(" (no wait statistics)\n")
 	}
 
-	var spidStyled string
-	if s.BlockedBy > 0 {
-		spidStyled = styleBad.Render(padRight(fmt.Sprintf("%d!", s.SPID), colWidths[0]))
-	} else {
-		spidStyled = styleCell.Render(spidStr)
+	//FInd the largest waittime
+	maxMs := waits[0].WaittimeMs // We have an order by clause in the query
+	if maxMs == 0 {
+		maxMs = 1
 	}
 
-	totalFixed := 0
-	for _, w := range colWidths {
-		totalFixed += w + 1
+	const barWidth = 14
+
+	for _, w := range waits {
+		// proprotional ba: filled = barwidth *thisWait / maxWait
+		filled := int(int64(barWidth) * w.WaittimeMs / maxMs)
+		bar := ""
+		for i := 0; i < barWidth; i++ {
+			if i < filled {
+				bar += styleWarn.Render("▪")
+			} else {
+				bar += styleDim.Render("·")
+			}
+		}
+		avgStr := fmt.Sprintf(" avg %.1f ms", w.AvgWaitMs)
+
+		out += styleCell.Render(padRight(truncate(w.WaitType, waitsColW[0]), waitsColW[0])) + " " +
+			styleDim.Render(padRight(fmt.Sprintf("%d", w.WaitingTasks), waitsColW[1])) + " " +
+			styleDim.Render(padRight(fmt.Sprintf("%d", w.WaittimeMs), waitsColW[2])) + " " +
+			bar +
+			styleDim.Render(avgStr) + "\n"
 	}
-	qw := viewWidth - totalFixed - 2
-	if qw < 0 {
-		qw = 0
+	return out
+}
+
+var expColW = []int{12, 14, 16, 12, 14}
+
+func buildExpensiveTable(queries []db.ExpensiveQuery, vw int) string {
+	headers := []string{"executions", "Total CPU ms", "Total Elapsed ms", "Avg CPU ms", "Last run"}
+	out := tableHeader(headers, expColW, vw) + tableRule(vw)
+
+	if len(queries) == 0 {
+		return out + styleDim.Render(" (no cached query plans found)\n")
 	}
 
-	row := spidStyled + " " +
-		statusStyled + " " +
-		styleCell.Render(padRight(truncate(s.LoginName, colWidths[2]), colWidths[2])) + " " +
-		styleDim.Render(padRight(truncate(s.DatabaseName, colWidths[3]), colWidths[3])) + " " +
-		styleDim.Render(padRight(truncate(s.ProgramName, colWidths[4]), colWidths[4])) + " " +
-		styleCell.Render(padRight(fmt.Sprintf("%d", s.WaitTimeMs), colWidths[5])) + " "
+	for _, q := range queries {
+		lastRun := q.LastExecution.Format("01-02 15:04:05")
 
-	if qw > 0 {
-		row += styleDim.Render(truncate(cleanQuery(s.QueryText), qw))
+		fixed := totalWidth(expColW)
+		qw := vw - fixed - 2
+
+		row := styleCell.Render(padRight(fmt.Sprintf("%d", q.ExecutionCount), expColW[0])) + " " +
+			styleWarn.Render(padRight(fmt.Sprintf("%d", q.TotalCPUMs), expColW[1])) + " " +
+			styleDim.Render(padRight(fmt.Sprintf("%d", q.TotalElapsedMs), expColW[2])) + " " +
+			styleCell.Render(padRight(fmt.Sprintf("%.1f", q.AvgCPUMs), expColW[3])) + " " +
+			styleDim.Render(padRight(lastRun, expColW[4])) + " "
+		if qw > 0 {
+			row += styleDim.Render(truncate(cleanQuery(q.QueryText), qw))
+		}
+		out += row + "\n"
 	}
+	return out
+}
 
+// table helpers
+func tableHeader(headers []string, colW []int, vw int) string {
+	row := ""
+	fixed := totalWidth(colW)
+	lastW := vw - fixed - 2
+	for i, h := range headers {
+		w := colW[i]
+		if i == len(headers)-1 {
+			w = lastW
+		}
+		if w <= 0 {
+			break
+		}
+		row += styleHeaderCell.Render(padRight(h, w)) + " "
+	}
 	return row + "\n"
+}
+
+func tableRule(vw int) string {
+	return styleSeparator.Render(repeatString("-", vw-2)) + "\n"
+}
+
+func totalWidth(cols []int) int {
+	totalWidth := 0
+	for _, c := range cols {
+		totalWidth += c + 1
+	}
+	return totalWidth
 }
 
 // String helpers
