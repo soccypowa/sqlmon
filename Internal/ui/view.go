@@ -17,17 +17,23 @@ func (m Model) View() string {
 		return ""
 	}
 
+	// Build normal screen
 	panelInner := m.renderTabBar() + "\n" + m.viewPort.View()
 	panel := stylePanel.Width(m.width - 2).Render(panelInner)
 
-	return strings.Join([]string{
+	screen := strings.Join([]string{
 		m.renderHeader(),
 		m.renderMetricsBar(),
-		renderSeparator(m.width),
 		panel,
 		m.renderFooter(),
 	}, "\n")
 
+	// If popup is open
+	if m.showPopup && len(m.sessions) > 0 {
+		screen = m.renderPopup(screen)
+	}
+
+	return screen
 }
 
 // KEY IDEA: lipgloss.Width() measures the *visible* width of a
@@ -63,6 +69,130 @@ func (m Model) renderHeader() string {
 	return styleHeader.Width(m.width).Render(
 		left + strings.Repeat(" ", gap) + right,
 	)
+}
+
+// ------------------------------------------------------------------
+// Popup overlay
+// ------------------------------------------------------------------
+//
+// HOW lipgloss.Place() WORKS
+//
+//   lipgloss.Place(
+//       totalWidth, totalHeight,   // the "canvas" size
+//       lipgloss.Center,           // horizontal alignment within canvas
+//       lipgloss.Center,           // vertical alignment within canvas
+//       popupString,               // the content to place
+//       lipgloss.WithWhitespaceForeground(colorDimGray), // fill colour
+//   )
+//
+// Place() returns a string of exactly totalWidth × totalHeight that
+// has the popup centred and everything else filled with spaces (or
+// whatever whitespace style you provide). When printed, those spaces
+// overwrite the screen content behind the popup, creating the
+// "modal overlay" effect without needing a real layering system.
+
+func (m Model) renderPopup(behind string) string {
+	var title, details, rawQuery string
+
+	switch m.activeTab {
+	case TabProcesses:
+		s := m.sessions[m.selectedRow]
+
+		title = stylePopupTitle.Render(fmt.Sprintf("SPID %d  ·  %s  ·  %s", s.SPID, s.Status, s.DatabaseName))
+		type field struct{ label, value string }
+		fields := []field{
+			{"Login", s.LoginName},
+			{"Host", s.HostName},
+			{"Program", s.ProgramName},
+			{"Database", s.DatabaseName},
+			{"Wait Type", s.WaitType},
+			{"Wait Ms", fmt.Sprintf("%d", s.WaitTimeMs)},
+			{"CPU Ms", fmt.Sprintf("%d", s.CPUTime)},
+			{"Elapsed Ms", fmt.Sprintf("%d", s.ElapsedMs)},
+			{"Blocked by", blockedByLabel(s.BlockedBy)},
+		}
+		labelW := 12 // fixed label column width
+		for _, f := range fields {
+			if f.value == "" {
+				continue
+			}
+			label := styleDim.Render(padRight(f.label, labelW))
+			val := styleCell.Render(f.value)
+			details += label + " " + val + "\n"
+		}
+
+		rawQuery = cleanQuery(s.QueryText)
+
+	case TabExpensive:
+		q := m.queries[m.selectedRow]
+		title = fmt.Sprintf("Rank #%d  ·  %d executions  ·  avg %.1f ms CPU", m.selectedRow+1, q.ExecutionCount, q.AvgCPUMs)
+		type field struct{ label, value string }
+		fields := []field{
+			{"Total CPU ms", fmt.Sprintf("%d", q.TotalCPUMs)},
+			{"Total elapsed", fmt.Sprintf("%d ms", q.TotalElapsedMs)},
+			{"Avg CPU ms", fmt.Sprintf("%.1f", q.AvgCPUMs)},
+			{"Executions", fmt.Sprintf("%d", q.ExecutionCount)},
+			{"Last run", q.LastExecution.Format("2006-01-02 15:04:05")},
+		}
+		labelW := 14
+		for _, f := range fields {
+			label := styleDim.Render(padRight(f.label, labelW))
+			val := styleCell.Render(f.value)
+			details += label + " " + val + "\n"
+
+		}
+		rawQuery = cleanQuery(q.QueryText)
+	}
+
+	// Popup width: 70% of terminal, clamped to 40-120 chars.
+	popW := m.width * 70 / 100
+	if popW < 40 {
+		popW = 40
+	}
+	if popW > 120 {
+		popW = 120
+	}
+	// Inner width available for text (subtract border + padding).
+	innerW := popW - 6 // 2 border + 2*2 padding + 2 cursor margin
+
+	devider := styleSeparator.Render(repeatString("-", innerW))
+
+	if rawQuery == "" {
+		rawQuery = "(no query text available)"
+	}
+	wrapped := wordWrap(rawQuery, innerW)
+	queryString := stylePopupContent.Render(wrapped)
+
+	hint := stylePopUpHint.Render("[Esc] or [Enter] to close")
+
+	body := strings.Join([]string{title, details, devider, queryString, hint}, "\n")
+
+	popup := stylePopupBox.Width(popW).Render(body)
+
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, popup)
+}
+
+func wordWrap(s string, width int) string {
+	if width <= 0 {
+		return s
+	}
+	words := strings.Fields(s)
+	line := ""
+	result := ""
+	for _, w := range words {
+		if line == "" {
+			line = w
+		} else if len(line)+1+len(w) <= width {
+			line += " " + w
+		} else {
+			result += line + "\n"
+			line = w
+		}
+	}
+	if line != "" {
+		result += line
+	}
+	return result
 }
 
 // Renders a single line of key health counters:
@@ -144,12 +274,16 @@ func (m Model) renderTabBar() string {
 	return tabRow + "\n" + underLine
 }
 
-func renderSeparator(width int) string {
-	return styleSeparator.Render(strings.Repeat("-", width))
-}
-
 func (m Model) renderFooter() string {
-	help := fmt.Sprintf("  [q] quit   [r] refresh   [tab/1-3] switch   [↑↓] scroll   auto: %s", m.interval.String())
+	var help string
+	switch m.activeTab {
+	case TabProcesses:
+		help = fmt.Sprintf("  [q] quit   [r] refresh   [tab/1-3] switch   [↑↓] select  [Enter] detail   [←→] hscroll   auto: %s", m.interval.String())
+	case TabExpensive:
+		help = fmt.Sprintf("  [q] quit   [r] refresh   [tab/1-3] switch   [↑↓] select  [Enter] detail  auto: %s", m.interval.String())
+	default:
+		help = fmt.Sprintf("  [q] quit   [r] refresh   [tab/1-3] switch   [↑↓] scroll    auto: %s", m.interval.String())
+	}
 	//size := fmt.Sprintf("terminal: %d x %d", m.width, m.height)
 
 	var info string

@@ -3,16 +3,17 @@ package ui
 import "github.com/charmbracelet/lipgloss"
 
 var (
-	colorBg      = lipgloss.Color("#0d1117") // near-black background
-	colorBgPanel = lipgloss.Color("#161b22") // slightly lighter panels
-	colorBorder  = lipgloss.Color("#30363d") // subtle border lines
-	colorDimGray = lipgloss.Color("#2d3436") // dark bars (header/footer bg)
-	colorGray    = lipgloss.Color("#636e72") // secondary / dim text
-	colorWhite   = lipgloss.Color("#dfe6e9") // primary text
-	colorCyan    = lipgloss.Color("#00d2d3") // accent / active elements
-	colorGreen   = lipgloss.Color("#00ff87") // good / running
-	colorYellow  = lipgloss.Color("#ffd32a") // warning
-	colorRed     = lipgloss.Color("#ff4757") // error / blocked
+	colorBg       = lipgloss.Color("#0d1117") // near-black background
+	colorBgPanel  = lipgloss.Color("#161b22") // slightly lighter panels
+	colorBorder   = lipgloss.Color("#30363d") // subtle border lines
+	colorDimGray  = lipgloss.Color("#2d3436") // dark bars (header/footer bg)
+	colorGray     = lipgloss.Color("#636e72") // secondary / dim text
+	colorWhite    = lipgloss.Color("#dfe6e9") // primary text
+	colorCyan     = lipgloss.Color("#00d2d3") // accent / active elements
+	colorGreen    = lipgloss.Color("#00ff87") // good / running
+	colorYellow   = lipgloss.Color("#ffd32a") // warning
+	colorRed      = lipgloss.Color("#ff4757") // error / blocked
+	colorSelected = lipgloss.Color("#1c2d40")
 )
 
 // Structual styles
@@ -29,6 +30,7 @@ var styleLoading = lipgloss.NewStyle().Italic(true).Foreground(colorYellow)
 var styleErrText = lipgloss.NewStyle().Bold(true).Foreground(colorRed)
 var styleHeaderCell = lipgloss.NewStyle().Bold(true).Foreground(colorCyan)
 var styleCell = lipgloss.NewStyle().Foreground(colorWhite)
+var styleSelected = lipgloss.NewStyle().Background(colorSelected)
 
 // Status color styles
 var styleGood = lipgloss.NewStyle().Bold(true).Foreground(colorGreen)
@@ -43,6 +45,18 @@ var styleInactiveTab = lipgloss.NewStyle().Foreground(colorGray).Padding(0, 2)
 var styleMetricsLabel = lipgloss.NewStyle().Foreground(colorGray)
 var styleMetricSep = lipgloss.NewStyle().Foreground(colorBorder)
 var styleMetricBar = lipgloss.NewStyle().Background(colorDimGray).Padding(0, 1)
+
+// Popup styles
+var stylePopupBox = lipgloss.NewStyle().Border(lipgloss.DoubleBorder()).
+	BorderForeground(colorCyan).Background(colorBgPanel).
+	Padding(1, 2)
+
+var stylePopupTitle = lipgloss.NewStyle().Bold(true).Foreground(colorCyan).
+	MarginBottom(1)
+
+var stylePopupContent = lipgloss.NewStyle().Foreground(colorWhite)
+
+var stylePopUpHint = lipgloss.NewStyle().Foreground(colorCyan).MarginTop(1)
 
 // Threshold aware helpers
 func cpuStyle(pct int) lipgloss.Style {

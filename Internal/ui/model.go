@@ -29,7 +29,8 @@ const (
 	//   1  thin separator line
 	//   1  footer bar
 	//   2  viewport border (top + bottom)
-	chromeHeight = 10 // Borde vara 9 enligt exemplet
+	chromeHeight = 8 // Borde vara 9 enligt exemplet
+	hScrollStep  = 8
 )
 
 // fetchDoneMsg is sent by fetchSessionsCmd when the query completes
@@ -55,6 +56,10 @@ type Model struct {
 	height    int
 	viewPort  viewport.Model // scrollable content pane
 	activeTab Tab
+	// process tab navigation
+	selectedRow int
+	hScroll     int
+	showPopup   bool
 	//data
 	sessions []db.Session
 	waits    []db.WaitStat
@@ -198,6 +203,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		m.err = msg.err
 		if msg.err == nil {
+			// Cleanup selected row in case the session count srank
+			if m.selectedRow <= len(msg.sessions) && len(m.sessions) > 0 {
+				m.selectedRow = len(msg.sessions) - 1
+			}
 			m.sessions = msg.sessions
 			m.waits = msg.waits
 			m.queries = msg.queries
@@ -214,6 +223,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// When a key is pressed
 	case tea.KeyMsg:
+		// When the popup is open we only hande close keys
+		if m.showPopup {
+			switch msg.String() {
+			case "esc", "enter", "q", "ctrl+c":
+				m.showPopup = false
+			}
+			return m, tea.Batch(cmds...)
+		}
+
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
@@ -221,12 +239,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.loading = true
 			m.viewPort.SetContent(m.buildContent())
 			cmds = append(cmds, fetchAllCmd(m.client))
-		case "tab", "right":
+		case "tab":
 			m.activeTab = (m.activeTab + 1) % tabCount
+			m.selectedRow = 0
 			m.viewPort.GotoTop()
 			m.viewPort.SetContent(m.buildContent())
-		case "shift+tab", "left":
+		case "shift+tab":
 			m.activeTab = (m.activeTab + tabCount - 1) % tabCount
+			m.selectedRow = 0
 			m.viewPort.GotoTop()
 			m.viewPort.SetContent(m.buildContent())
 		case "1":
@@ -235,20 +255,102 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setTab(TabWaits)
 		case "3":
 			m.setTab(TabExpensive)
+		case "up":
+			switch m.activeTab {
+			case TabProcesses:
+				if m.selectedRow > 0 {
+					m.selectedRow--
+					m.ensureVisible()
+					m.viewPort.SetContent(m.buildContent())
+				}
+			case TabExpensive:
+				if m.selectedRow > 0 {
+					m.selectedRow--
+					m.ensureVisible()
+					m.viewPort.SetContent(m.buildContent())
+				}
+			}
+		case "down":
+			switch m.activeTab {
+			case TabProcesses:
+				if m.selectedRow < len(m.sessions)-1 {
+					m.selectedRow++
+					m.ensureVisible()
+					m.viewPort.SetContent(m.buildContent())
+				}
+			case TabExpensive:
+				if m.selectedRow < len(m.queries)-1 {
+					m.selectedRow++
+					m.ensureVisible()
+					m.viewPort.SetContent(m.buildContent())
+				}
+			}
+		case "enter":
+			switch m.activeTab {
+			case TabProcesses:
+				if len(m.sessions) > 0 {
+					m.showPopup = true
+				}
+			case TabExpensive:
+				if len(m.queries) > 0 {
+					m.showPopup = true
+				}
+			}
+		case "right":
+			if m.activeTab == TabProcesses {
+				m.hScroll += hScrollStep
+				m.viewPort.SetContent(m.buildContent())
+			}
+		case "left":
+			if m.activeTab == TabProcesses {
+				m.hScroll -= hScrollStep
+				if m.hScroll < 0 {
+					m.hScroll = 0
+				}
+				m.viewPort.SetContent(m.buildContent())
+			}
+		case "home":
+			m.hScroll = 0
+			m.viewPort.SetContent(m.buildContent())
 		}
 	}
 
-	// Forward all other messages to the viewport so it can handle
-	// scroll keys (↑ ↓ PgUp PgDn g G) itself.
-	var vpCmd tea.Cmd
-	m.viewPort, vpCmd = m.viewPort.Update(msg)
-	cmds = append(cmds, vpCmd)
+	if !m.showPopup {
+		// Forward all other messages to the viewport so it can handle
+		// scroll keys (↑ ↓ PgUp PgDn g G) itself.
+		var vpCmd tea.Cmd
+		m.viewPort, vpCmd = m.viewPort.Update(msg)
+		cmds = append(cmds, vpCmd)
+	}
 
 	return m, tea.Batch(cmds...)
 }
 
+// ensureVisible adjusts the viewport's YOffset so that selectedRow
+// (plus the 2-line header above the data rows) is within the visible
+// window.
+//
+// The viewport content layout is:
+//   line 0: column headers
+//   line 1: separator rule
+//   lines 2+: one data row per session
+//
+// So session[i] is at content line (i + 2).
+
+func (m Model) ensureVisible() {
+	const headerlines = 2
+	targetLine := m.selectedRow + headerlines
+
+	if targetLine < m.viewPort.YOffset {
+		m.viewPort.YOffset = targetLine
+	} else if targetLine >= m.viewPort.YOffset+m.viewPort.Height {
+		m.viewPort.YOffset = targetLine - m.viewPort.Height + 1
+	}
+}
+
 func (m *Model) setTab(t Tab) {
 	m.activeTab = t
+	m.selectedRow = 0
 	m.viewPort.GotoTop()
 	m.viewPort.SetContent(m.buildContent())
 }
@@ -268,11 +370,11 @@ func (m Model) buildContent() string {
 
 	switch m.activeTab {
 	case TabProcesses:
-		return buildProcessTable(m.sessions, m.viewPort.Width)
+		return buildProcessTable(m.sessions, m.viewPort.Width, m.selectedRow, m.hScroll)
 	case TabWaits:
 		return buildWaitsTable(m.waits, m.viewPort.Width)
 	case TabExpensive:
-		return buildExpensiveTable(m.queries, m.viewPort.Width)
+		return buildExpensiveTable(m.queries, m.viewPort.Width, m.selectedRow)
 	}
 
 	return ""
@@ -280,61 +382,163 @@ func (m Model) buildContent() string {
 
 // Column layout: fixed widths for all but the last (Query) column.
 // We compute query width dynamically from the available viewport width.
-var processColW = []int{6, 11, 16, 14, 18, 10, 9}
+// HORIZONTAL SCROLL IMPLEMENTATION
+//
+// Each row is built as a full-width ANSI-escaped string. We can't
+// simply index into it with s[hScroll:] because ANSI escape sequences
+// are invisible bytes — slicing mid-escape corrupts the output.
+//
+// Instead we work with the *visible* content before styling:
+//   1. Build the plain-text cell values (no ANSI).
+//   2. Apply hScroll as a character offset to the plain cells.
+//   3. Render the (now-offset) cells with Lipgloss.
+//
+// This means we lose the colour on partially-scrolled cells at the
+// left edge, but the layout is always correct. The alternative
+// (ANSI-aware string slicing) adds significant complexity for
+// marginal benefit.
 
-func buildProcessTable(sessions []db.Session, vw int) string {
-	headers := []string{"SPID", "Status", "Login", "Database", "Program", "Wait Type", "Wait ms"}
-	out := tableHeader(headers, processColW, vw) + tableRule(vw)
+// Full column definitions for the Processes table.
+// id, label, width
+
+type col struct {
+	label string
+	width int
+}
+
+var processCols = []col{
+	{"SPID", 6},
+	{"Status", 11},
+	{"Login", 30},
+	{"Host", 14},
+	{"Program", 20},
+	{"Database", 14},
+	{"Wait Type", 16},
+	{"Wait ms", 9},
+	{"CPU ms", 9},
+	{"Elapsed ms", 11},
+	{"Blk by", 7},
+	{"Query", 0}, // 0 = fills the rest of the width (FUNDERA PÅ OM DET ÄR BRA DET)
+}
+
+func buildProcessTable(sessions []db.Session, vw, selctedRow, hScroll int) string {
+	// Compute query column
+	fixedW := 0
+	for _, c := range processCols[:len(processCols)-1] {
+		fixedW += c.width + 1
+	}
+	queryW := vw - fixedW - 2
+	if queryW < 10 {
+		queryW = 10
+	}
+	cols := make([]col, len(processCols))
+	copy(cols, processCols)
+	cols[len(cols)-1].width = queryW
+
+	//Total logical width
+	totalW := 0
+	for _, c := range cols {
+		totalW += c.width + 1
+	}
+
+	headerCells := make([]string, len(cols))
+	for i, c := range cols {
+		headerCells[i] = padRight(c.label, c.width)
+	}
+	headerLine := hCrop(joinCells(headerCells), hScroll, vw-2)
+	out := styleHeaderCell.Render(headerLine) + "\n" + tableRule(vw)
 
 	if len(sessions) == 0 {
 		return out + styleDim.Render(" (no user sessions)\n")
 	}
-	for _, s := range sessions {
-		spidStr := padRight(fmt.Sprintf("%d", s.SPID), processColW[0])
-		var spidStyled string
-		if s.BlockedBy > 0 {
-			spidStyled = styleBad.Render(padRight(fmt.Sprintf("%d!", s.SPID), processColW[0]))
-		} else {
-			spidStyled = styleCell.Render(spidStr)
+	for i, s := range sessions {
+		cells := []string{
+			padRight(spidLabel(s), cols[0].width),
+			padRight(s.Status, cols[1].width),
+			padRight(truncate(s.LoginName, cols[2].width), cols[2].width),
+			padRight(truncate(s.HostName, cols[3].width), cols[3].width),
+			padRight(truncate(s.ProgramName, cols[4].width), cols[4].width),
+			padRight(truncate(s.DatabaseName, cols[5].width), cols[5].width),
+			padRight(truncate(s.WaitType, cols[6].width), cols[6].width),
+			padRight(fmt.Sprintf("%d", s.WaitTimeMs), cols[7].width),
+			padRight(fmt.Sprintf("%d", s.CPUTime), cols[8].width),
+			padRight(fmt.Sprintf("%d", s.ElapsedMs), cols[9].width),
+			padRight(blockedByLabel(s.BlockedBy), cols[10].width),
+			truncate(cleanQuery(s.QueryText), cols[11].width),
 		}
 
-		statusStr := padRight(s.Status, processColW[1])
-		var statusStyled string
-		switch s.Status {
-		case "running":
-			statusStyled = styleGood.Render(statusStr)
-		case "suspended":
-			statusStyled = styleWarn.Render(statusStr)
+		// Apply horizontal scroll: crop the joined plain-text row to
+		// [hScroll : hScroll+viewWidth] before adding any ANSI.
+		plainRow := joinCells(cells)
+		cropedRow := hCrop(plainRow, hScroll, vw-2)
+
+		var styledRow string
+		switch {
+		case i == selctedRow && s.BlockedBy > 0:
+			styledRow = styleBad.Background(colorSelected).Render(cropedRow)
+		case i == selctedRow:
+			styledRow = styleSelected.Foreground(colorWhite).Render(cropedRow)
+		case s.BlockedBy > 0:
+			styledRow = styleBad.Render(cropedRow)
+		case s.Status == "running":
+			styledRow = styleGood.Render(cropedRow)
+		case s.Status == "suspended" && s.WaitType != "":
+			styledRow = styleWarn.Render(cropedRow)
 		default:
-			statusStyled = styleDim.Render(statusStr)
+			styledRow = styleDim.Render(cropedRow)
 		}
 
-		waitstr := padRight(truncate(s.WaitType, processColW[5]), processColW[5])
-		var waitStyled string
-		if s.WaitType != "" {
-			waitStyled = styleWarn.Render(waitstr)
-		} else {
-			waitStyled = styleDim.Render(waitstr)
+		cursor := "  "
+		if i == selctedRow {
+			cursor = styleTitle.Render("▶ ")
 		}
-
-		fixed := totalWidth(processColW)
-		qw := vw - fixed - 2
-
-		row := spidStyled + " " +
-			statusStyled + " " +
-			styleCell.Render(padRight(truncate(s.LoginName, processColW[2]), processColW[2])) + " " +
-			styleDim.Render(padRight(truncate(s.DatabaseName, processColW[3]), processColW[3])) + " " +
-			styleDim.Render(padRight(truncate(s.ProgramName, processColW[4]), processColW[4])) + " " +
-			waitStyled + " " +
-			styleCell.Render(padRight(fmt.Sprintf("%d", s.WaitTimeMs), processColW[6])) + " "
-
-		if qw > 0 {
-			row += styleDim.Render(truncate(cleanQuery(s.QueryText), qw))
-		}
-
-		out += row + "\n"
+		out += cursor + styledRow + "\n"
 	}
 	return out
+}
+
+func spidLabel(s db.Session) string {
+	if s.BlockedBy > 0 {
+		return fmt.Sprintf("%d!", s.SPID)
+	}
+	return fmt.Sprintf("%d", s.SPID)
+}
+
+func blockedByLabel(n int) string {
+	if n > 0 {
+		return fmt.Sprintf("%d", n)
+	}
+	return ""
+}
+
+func joinCells(cells []string) string {
+	out := ""
+	for i, c := range cells {
+		if i > 0 {
+			out += " "
+		}
+		out += c
+	}
+	return out
+}
+
+// hCrop returns the visible slice of a plain-text string starting at
+// character offset `skip`, truncated to at most `width` characters.
+// If skip ≥ len(s) it returns a blank string of the correct width.
+func hCrop(s string, skip, width int) string {
+	runes := []rune(s)
+	if skip >= len(runes) {
+		return repeatString(" ", width)
+	}
+	runes = runes[skip:]
+	if len(runes) > width {
+		runes = runes[:width]
+	}
+	// Pad to exactly width so the row fills the panel.
+	for len(runes) < width {
+		runes = append(runes, ' ')
+	}
+	return string(runes)
 }
 
 var waitsColW = []int{38, 14, 14}
@@ -379,7 +583,7 @@ func buildWaitsTable(waits []db.WaitStat, vw int) string {
 
 var expColW = []int{12, 14, 16, 12, 14}
 
-func buildExpensiveTable(queries []db.ExpensiveQuery, vw int) string {
+func buildExpensiveTable(queries []db.ExpensiveQuery, vw, selectedRow int) string {
 	headers := []string{"executions", "Total CPU ms", "Total Elapsed ms", "Avg CPU ms", "Last run"}
 	out := tableHeader(headers, expColW, vw) + tableRule(vw)
 
@@ -387,9 +591,7 @@ func buildExpensiveTable(queries []db.ExpensiveQuery, vw int) string {
 		return out + styleDim.Render(" (no cached query plans found)\n")
 	}
 
-	for _, q := range queries {
-		lastRun := q.LastExecution.Format("01-02 15:04:05")
-
+	for i, q := range queries {
 		fixed := totalWidth(expColW)
 		qw := vw - fixed - 2
 
@@ -397,11 +599,16 @@ func buildExpensiveTable(queries []db.ExpensiveQuery, vw int) string {
 			styleWarn.Render(padRight(fmt.Sprintf("%d", q.TotalCPUMs), expColW[1])) + " " +
 			styleDim.Render(padRight(fmt.Sprintf("%d", q.TotalElapsedMs), expColW[2])) + " " +
 			styleCell.Render(padRight(fmt.Sprintf("%.1f", q.AvgCPUMs), expColW[3])) + " " +
-			styleDim.Render(padRight(lastRun, expColW[4])) + " "
+			styleDim.Render(padRight(q.LastExecution.Format("01-02 15:04:05"), expColW[4])) + " "
 		if qw > 0 {
 			row += styleDim.Render(truncate(cleanQuery(q.QueryText), qw))
 		}
-		out += row + "\n"
+		cursor := "  "
+		if i == selectedRow {
+			cursor = styleTitle.Render("▶ ")
+			row = styleSelected.Foreground(colorWhite).Render(row)
+		}
+		out += cursor + row + "\n"
 	}
 	return out
 }
