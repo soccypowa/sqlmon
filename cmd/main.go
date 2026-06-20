@@ -15,7 +15,8 @@ import (
 func main() {
 	connStr := flag.String("conn", "", "SQL Server connection string\n"+
 		"  sqlserver://user:password@host[:port][/instance]\n"+
-		"  sqlserver://host?trusted_connection=true  (Windows auth)")
+		"  sqlserver://host?trusted_connection=true  (Windows auth)\n"+
+		"  For further information checkout: https://github.com/microsoft/go-mssqldb")
 	interval := flag.Duration("interval", 5*time.Second,
 		"How often to refresh data (e.g. 5s, 10s, 30s).")
 	flag.Parse()
@@ -27,6 +28,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, `  sqlmon --conn "sqlserver://sa:password@localhost"`)
 		fmt.Fprintln(os.Stderr, `  sqlmon --conn "sqlserver://myserver:1433" --interval 10s`)
 		fmt.Fprintln(os.Stderr, `  sqlmon --conn "sqlserver://myserver?trusted_connection=true"`)
+		fmt.Fprintln(os.Stderr, "  For further information checkout: https://github.com/microsoft/go-mssqldb")
 		os.Exit(1)
 	}
 
