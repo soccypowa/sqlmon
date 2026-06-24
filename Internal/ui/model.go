@@ -298,7 +298,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "right":
 			if m.activeTab == TabProcesses {
+				maxScroll := calculateMaxHScroll(m.viewPort.Width)
 				m.hScroll += hScrollStep
+				if m.hScroll > maxScroll {
+					m.hScroll = maxScroll
+				}
 				m.viewPort.SetContent(m.buildContent())
 			}
 		case "left":
@@ -672,6 +676,18 @@ func cleanQuery(s string) string {
 		}
 	}
 	return out
+}
+
+func calculateMaxHScroll(vw int) int {
+	totalw := 0
+	for _, c := range processCols {
+		totalw += c.width + 1
+	}
+	maxScroll := totalw - (vw - 2)
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	return maxScroll
 }
 
 //var _ = fmt.SprintF
