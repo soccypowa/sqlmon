@@ -418,31 +418,17 @@ var processCols = []col{
 	{"CPU ms", 9},
 	{"Elapsed ms", 11},
 	{"Blk by", 7},
-	{"Query", 0}, // 0 = fills the rest of the width (FUNDERA PÅ OM DET ÄR BRA DET)
+	{"Query", 50},
 }
 
 func buildProcessTable(sessions []db.Session, vw, selctedRow, hScroll int) string {
-	// Compute query column
-	fixedW := 0
-	for _, c := range processCols[:len(processCols)-1] {
-		fixedW += c.width + 1
-	}
-	queryW := vw - fixedW - 2
-	if queryW < 10 {
-		queryW = 10
-	}
-	cols := make([]col, len(processCols))
-	copy(cols, processCols)
-	cols[len(cols)-1].width = queryW
-
-	//Total logical width
 	totalW := 0
-	for _, c := range cols {
+	for _, c := range processCols {
 		totalW += c.width + 1
 	}
 
-	headerCells := make([]string, len(cols))
-	for i, c := range cols {
+	headerCells := make([]string, len(processCols))
+	for i, c := range processCols {
 		headerCells[i] = padRight(c.label, c.width)
 	}
 	headerLine := hCrop(joinCells(headerCells), hScroll, vw-2)
@@ -453,18 +439,18 @@ func buildProcessTable(sessions []db.Session, vw, selctedRow, hScroll int) strin
 	}
 	for i, s := range sessions {
 		cells := []string{
-			padRight(spidLabel(s), cols[0].width),
-			padRight(s.Status, cols[1].width),
-			padRight(truncate(s.LoginName, cols[2].width), cols[2].width),
-			padRight(truncate(s.HostName, cols[3].width), cols[3].width),
-			padRight(truncate(s.ProgramName, cols[4].width), cols[4].width),
-			padRight(truncate(s.DatabaseName, cols[5].width), cols[5].width),
-			padRight(truncate(s.WaitType, cols[6].width), cols[6].width),
-			padRight(fmt.Sprintf("%d", s.WaitTimeMs), cols[7].width),
-			padRight(fmt.Sprintf("%d", s.CPUTime), cols[8].width),
-			padRight(fmt.Sprintf("%d", s.ElapsedMs), cols[9].width),
-			padRight(blockedByLabel(s.BlockedBy), cols[10].width),
-			truncate(cleanQuery(s.QueryText), cols[11].width),
+			padRight(spidLabel(s), processCols[0].width),
+			padRight(s.Status, processCols[1].width),
+			padRight(truncate(s.LoginName, processCols[2].width), processCols[2].width),
+			padRight(truncate(s.HostName, processCols[3].width), processCols[3].width),
+			padRight(truncate(s.ProgramName, processCols[4].width), processCols[4].width),
+			padRight(truncate(s.DatabaseName, processCols[5].width), processCols[5].width),
+			padRight(truncate(s.WaitType, processCols[6].width), processCols[6].width),
+			padRight(fmt.Sprintf("%d", s.WaitTimeMs), processCols[7].width),
+			padRight(fmt.Sprintf("%d", s.CPUTime), processCols[8].width),
+			padRight(fmt.Sprintf("%d", s.ElapsedMs), processCols[9].width),
+			padRight(blockedByLabel(s.BlockedBy), processCols[10].width),
+			truncate(cleanQuery(s.QueryText), processCols[11].width),
 		}
 
 		// Apply horizontal scroll: crop the joined plain-text row to
