@@ -3,3 +3,6 @@
 
 # Certs
 *.crt
+
+# Built artifacts
+/bin
