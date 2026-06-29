@@ -3,8 +3,10 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 )
 
 // View() converts the model into a string. Bubble Tea prints that
@@ -154,6 +156,9 @@ func (m Model) renderPopup(behind string) string {
 	}
 	// Inner width available for text (subtract border + padding).
 	innerW := popW - 6 // 2 border + 2*2 padding + 2 cursor margin
+	if innerW < 0 {
+		innerW = 0
+	}
 
 	devider := styleSeparator.Render(repeatString("-", innerW))
 
@@ -164,12 +169,26 @@ func (m Model) renderPopup(behind string) string {
 	queryString := stylePopupContent.Render(wrapped)
 
 	hint := stylePopUpHint.Render("[ctrl+c] Copy query   [Esc] or [Enter] to close")
-
 	body := strings.Join([]string{title, details, devider, queryString, hint}, "\n")
-
 	popup := stylePopupBox.Width(popW).Render(body)
 
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, popup)
+	behindLines := strings.Split(behind, "\n")
+	popupLines := strings.Split(popup, "\n")
+
+	popupX := (m.width - popW) / 2
+	popupY := (m.height - len(popupLines)) / 2
+	if popupY < 0 {
+		popupY = 0
+	}
+
+	for i := range behindLines {
+		if i < popupY || i >= popupY+len(popupLines) {
+			continue
+		}
+		popupLine := popupLines[i-popupY]
+		behindLines[i] = overlayLine(behindLines[i], popupX, popW, popupLine)
+	}
+	return strings.Join(behindLines, "\n")
 }
 
 func wordWrap(s string, width int) string {
@@ -193,6 +212,72 @@ func wordWrap(s string, width int) string {
 		result += line
 	}
 	return result
+}
+
+func overlayLine(line string, start, width int, popupLine string) string {
+	if width <= 0 {
+		return line
+	}
+	if start < 0 {
+		start = 0
+	}
+
+	prefix := ansiSlice(line, 0, start)
+	suffix := ansiSlice(line, start+width, 1<<30)
+	return prefix + popupLine + suffix
+}
+
+func ansiSlice(s string, from, to int) string {
+	if from >= to {
+		return ""
+	}
+	if from < 0 {
+		from = 0
+	}
+	if to < 0 {
+		return ""
+	}
+
+	var buf strings.Builder
+	pos := 0
+	for len(s) > 0 {
+		if seq := nextANSISequence(s); seq != "" {
+			buf.WriteString(seq)
+			s = s[len(seq):]
+			continue
+		}
+
+		r, size := utf8.DecodeRuneInString(s)
+		if r == utf8.RuneError && size == 1 {
+			break
+		}
+
+		w := runewidth.RuneWidth(r)
+		if pos >= to {
+			break
+		}
+		if pos >= from {
+			buf.WriteRune(r)
+		}
+		pos += w
+		s = s[size:]
+	}
+
+	return buf.String()
+}
+
+func nextANSISequence(s string) string {
+	if len(s) < 2 || s[0] != '\x1b' || s[1] != '[' {
+		return ""
+	}
+
+	for i := 2; i < len(s); i++ {
+		if s[i] >= 0x40 && s[i] <= 0x7e {
+			return s[:i+1]
+		}
+	}
+
+	return ""
 }
 
 // Renders a single line of key health counters:
