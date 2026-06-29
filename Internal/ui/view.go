@@ -163,7 +163,7 @@ func (m Model) renderPopup(behind string) string {
 	wrapped := wordWrap(rawQuery, innerW)
 	queryString := stylePopupContent.Render(wrapped)
 
-	hint := stylePopUpHint.Render("[Esc] or [Enter] to close")
+	hint := stylePopUpHint.Render("[ctrl+c] Copy query   [Esc] or [Enter] to close")
 
 	body := strings.Join([]string{title, details, devider, queryString, hint}, "\n")
 

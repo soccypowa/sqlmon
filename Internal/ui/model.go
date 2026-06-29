@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Soccypowa/sqlmon/Internal/db"
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -226,14 +227,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// When the popup is open we only hande close keys
 		if m.showPopup {
 			switch msg.String() {
-			case "esc", "enter", "q", "ctrl+c":
+			case "esc", "enter":
 				m.showPopup = false
+			case "ctrl+c":
+				var popupText string
+				switch m.activeTab {
+				case TabProcesses:
+					popupText = cleanQuery(m.sessions[m.selectedRow].QueryText)
+				case TabExpensive:
+					popupText = cleanQuery(m.queries[m.selectedRow].QueryText)
+				}
+				if popupText == "" {
+					popupText = "(no query text available)"
+				}
+				_ = clipboard.WriteAll(popupText)
 			}
 			return m, tea.Batch(cmds...)
 		}
 
 		switch msg.String() {
-		case "q", "ctrl+c":
+		case "q":
 			return m, tea.Quit
 		case "r": //manual refresh
 			m.loading = true
