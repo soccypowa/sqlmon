@@ -144,7 +144,7 @@ SELECT
     ISNULL(r.cpu_time,      0)  AS cpu_time,
     ISNULL(r.total_elapsed_time, 0) AS elapsed_ms,
     ISNULL(r.blocking_session_id, 0) AS blocked_by,
-    ISNULL(SUBSTRING(t.text, 1, 200), '') AS query_text
+    ISNULL(t.text, '') 			AS query_text
 FROM sys.dm_exec_sessions   AS s
 LEFT  JOIN sys.dm_exec_requests AS r  ON s.session_id = r.session_id
 OUTER APPLY sys.dm_exec_sql_text(r.sql_handle) AS t
@@ -239,7 +239,7 @@ ORDER BY wait_time_ms DESC`
 func (c *Client) GetExpensiveQueries(ctx context.Context) ([]ExpensiveQuery, error) {
 	const query = `
 SELECT TOP 25
-    ISNULL(SUBSTRING(t.text, 1, 200), '')   AS query_text,
+    ISNULL(t.text, '')   					AS query_text,
     qs.execution_count,
     qs.total_worker_time   / 1000           AS total_cpu_ms,
     qs.total_elapsed_time  / 1000           AS total_elapsed_ms,
