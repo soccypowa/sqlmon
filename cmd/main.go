@@ -54,7 +54,7 @@ func main() {
 	p := tea.NewProgram(
 		ui.Newmodel(client, name, *interval),
 		tea.WithAltScreen(),
-		tea.WithMouseCellMotion(),
+		//tea.WithMouseCellMotion(),
 	)
 
 	// p.Run() starts the event loop and blocks until tea.Quit is sent.
