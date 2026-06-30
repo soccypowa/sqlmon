@@ -17,8 +17,8 @@ var (
 )
 
 // Structual styles
-var styleHeader = lipgloss.NewStyle().Background(colorDimGray).Foreground(colorWhite)
-var styleFooter = lipgloss.NewStyle().Background(colorDimGray).Foreground(colorGray)
+var styleHeader = lipgloss.NewStyle().Foreground(colorWhite)
+var styleFooter = lipgloss.NewStyle().Foreground(colorGray)
 var stylePanel = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colorBorder).Background(colorBgPanel)
 
 // Text styles
@@ -30,7 +30,7 @@ var styleLoading = lipgloss.NewStyle().Italic(true).Foreground(colorYellow)
 var styleErrText = lipgloss.NewStyle().Bold(true).Foreground(colorRed)
 var styleHeaderCell = lipgloss.NewStyle().Bold(true).Foreground(colorCyan)
 var styleCell = lipgloss.NewStyle().Foreground(colorWhite)
-var styleSelected = lipgloss.NewStyle().Background(colorSelected)
+var styleSelected = lipgloss.NewStyle().Background(colorDimGray)
 
 // Status color styles
 var styleGood = lipgloss.NewStyle().Bold(true).Foreground(colorGreen)
@@ -38,13 +38,13 @@ var styleWarn = lipgloss.NewStyle().Bold(true).Foreground(colorYellow)
 var styleBad = lipgloss.NewStyle().Bold(true).Foreground(colorRed)
 
 // Tab styles
-var styleActiveTab = lipgloss.NewStyle().Bold(true).Foreground(colorBg).Background(colorCyan).Padding(0, 2)
+var styleActiveTab = lipgloss.NewStyle().Bold(true).Foreground(colorWhite).Background(colorDimGray).Padding(0, 2)
 var styleInactiveTab = lipgloss.NewStyle().Foreground(colorGray).Padding(0, 2)
 
 // Metrics bar
 var styleMetricsLabel = lipgloss.NewStyle().Foreground(colorGray)
 var styleMetricSep = lipgloss.NewStyle().Foreground(colorBorder)
-var styleMetricBar = lipgloss.NewStyle().Background(colorDimGray).Padding(0, 1)
+var styleMetricBar = lipgloss.NewStyle().Padding(0, 1)
 
 // Popup styles
 var stylePopupBox = lipgloss.NewStyle().Border(lipgloss.DoubleBorder()).
