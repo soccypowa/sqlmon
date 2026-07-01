@@ -448,7 +448,7 @@ func buildProcessTable(sessions []db.Session, vw, selctedRow, hScroll int) strin
 	for i, c := range processCols {
 		headerCells[i] = padRight(c.label, c.width)
 	}
-	headerLine := hCrop(joinCells(headerCells), hScroll, vw-2)
+	headerLine := hCrop(joinCells(headerCells), hScroll, vw)
 	out := styleHeaderCell.Render(headerLine) + "\n" + tableRule(vw)
 
 	if len(sessions) == 0 {
@@ -635,7 +635,7 @@ func tableHeader(headers []string, colW []int, vw int) string {
 }
 
 func tableRule(vw int) string {
-	return styleSeparator.Render(repeatString("-", vw-2)) + "\n"
+	return styleSeparator.Render(repeatString("-", vw)) + "\n"
 }
 
 func totalWidth(cols []int) int {
