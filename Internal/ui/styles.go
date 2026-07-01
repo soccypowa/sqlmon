@@ -3,17 +3,17 @@ package ui
 import "github.com/charmbracelet/lipgloss"
 
 var (
-	colorBg       = lipgloss.Color("#131326") // near-black background
-	colorBgPanel  = lipgloss.Color("#19182f") // slightly lighter panels
-	colorBorder   = lipgloss.Color("#a665f4") // subtle border lines
-	colorDimGray  = lipgloss.Color("#504c75") // dark bars (header/footer bg)
-	colorGray     = lipgloss.Color("#cdc6fb") // secondary / dim text
-	colorWhite    = lipgloss.Color("#f9f9f9") // primary text
-	colorCyan     = lipgloss.Color("#b4fcfd") // accent / active elements
-	colorGreen    = lipgloss.Color("#6fd640") // good / running
-	colorYellow   = lipgloss.Color("#f2d147") // warning
-	colorRed      = lipgloss.Color("#ed6d8d") // error / blocked
-	colorSelected = lipgloss.Color("#361369")
+	colorBg       = lipgloss.Color("#191a1b") // near-black background
+	colorBgPanel  = lipgloss.Color("#121314") // slightly lighter panels
+	colorGray     = lipgloss.Color("#4a9df8") // subtle border lines
+	colorDimGray  = lipgloss.Color("#868889") // dark bars (header/footer bg)
+	colorBorder   = lipgloss.Color("#bfbfbf") // secondary / dim text
+	colorWhite    = lipgloss.Color("#cad0d7") // primary text
+	colorCyan     = lipgloss.Color("#71c5b0") // accent / active elements
+	colorGreen    = lipgloss.Color("#88c796") // good / running
+	colorYellow   = lipgloss.Color("#debc85") // warning
+	colorRed      = lipgloss.Color("#e87f74") // error / blocked
+	colorSelected = lipgloss.Color("#345b72")
 )
 
 // Structual styles
