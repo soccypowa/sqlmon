@@ -5,9 +5,9 @@ import "github.com/charmbracelet/lipgloss"
 var (
 	colorBg       = lipgloss.Color("#131326") // near-black background
 	colorBgPanel  = lipgloss.Color("#19182f") // slightly lighter panels
-	colorBorder   = lipgloss.Color("#a866f7") // subtle border lines
+	colorBorder   = lipgloss.Color("#a665f4") // subtle border lines
 	colorDimGray  = lipgloss.Color("#504c75") // dark bars (header/footer bg)
-	colorGray     = lipgloss.Color("#a866f7") // secondary / dim text
+	colorGray     = lipgloss.Color("#cdc6fb") // secondary / dim text
 	colorWhite    = lipgloss.Color("#f9f9f9") // primary text
 	colorCyan     = lipgloss.Color("#b4fcfd") // accent / active elements
 	colorGreen    = lipgloss.Color("#6fd640") // good / running
