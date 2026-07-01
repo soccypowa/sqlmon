@@ -3,22 +3,22 @@ package ui
 import "github.com/charmbracelet/lipgloss"
 
 var (
-	colorBg       = lipgloss.Color("#0d1117") // near-black background
-	colorBgPanel  = lipgloss.Color("#161b22") // slightly lighter panels
-	colorBorder   = lipgloss.Color("#30363d") // subtle border lines
-	colorDimGray  = lipgloss.Color("#2d3436") // dark bars (header/footer bg)
-	colorGray     = lipgloss.Color("#636e72") // secondary / dim text
-	colorWhite    = lipgloss.Color("#dfe6e9") // primary text
-	colorCyan     = lipgloss.Color("#00d2d3") // accent / active elements
-	colorGreen    = lipgloss.Color("#00ff87") // good / running
-	colorYellow   = lipgloss.Color("#ffd32a") // warning
-	colorRed      = lipgloss.Color("#ff4757") // error / blocked
-	colorSelected = lipgloss.Color("#1c2d40")
+	colorBg       = lipgloss.Color("#131326") // near-black background
+	colorBgPanel  = lipgloss.Color("#19182f") // slightly lighter panels
+	colorBorder   = lipgloss.Color("#a866f7") // subtle border lines
+	colorDimGray  = lipgloss.Color("#504c75") // dark bars (header/footer bg)
+	colorGray     = lipgloss.Color("#a866f7") // secondary / dim text
+	colorWhite    = lipgloss.Color("#f9f9f9") // primary text
+	colorCyan     = lipgloss.Color("#b4fcfd") // accent / active elements
+	colorGreen    = lipgloss.Color("#6fd640") // good / running
+	colorYellow   = lipgloss.Color("#f2d147") // warning
+	colorRed      = lipgloss.Color("#ed6d8d") // error / blocked
+	colorSelected = lipgloss.Color("#361369")
 )
 
 // Structual styles
-var styleHeader = lipgloss.NewStyle().Foreground(colorWhite)
-var styleFooter = lipgloss.NewStyle().Foreground(colorGray)
+var styleHeader = lipgloss.NewStyle().Background(colorBg).Foreground(colorWhite)
+var styleFooter = lipgloss.NewStyle().Background(colorBg).Foreground(colorGray)
 var stylePanel = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colorBorder).Background(colorBgPanel)
 
 // Text styles
@@ -30,7 +30,7 @@ var styleLoading = lipgloss.NewStyle().Italic(true).Foreground(colorYellow)
 var styleErrText = lipgloss.NewStyle().Bold(true).Foreground(colorRed)
 var styleHeaderCell = lipgloss.NewStyle().Bold(true).Foreground(colorCyan)
 var styleCell = lipgloss.NewStyle().Foreground(colorWhite)
-var styleSelected = lipgloss.NewStyle().Background(colorDimGray)
+var styleSelected = lipgloss.NewStyle().Background(colorSelected)
 
 // Status color styles
 var styleGood = lipgloss.NewStyle().Bold(true).Foreground(colorGreen)
@@ -38,7 +38,7 @@ var styleWarn = lipgloss.NewStyle().Bold(true).Foreground(colorYellow)
 var styleBad = lipgloss.NewStyle().Bold(true).Foreground(colorRed)
 
 // Tab styles
-var styleActiveTab = lipgloss.NewStyle().Bold(true).Foreground(colorWhite).Background(colorDimGray).Padding(0, 2)
+var styleActiveTab = lipgloss.NewStyle().Bold(true).Foreground(colorWhite).Background(colorSelected).Padding(0, 2)
 var styleInactiveTab = lipgloss.NewStyle().Foreground(colorGray).Padding(0, 2)
 
 // Metrics bar
@@ -48,7 +48,7 @@ var styleMetricBar = lipgloss.NewStyle().Padding(0, 1)
 
 // Popup styles
 var stylePopupBox = lipgloss.NewStyle().Border(lipgloss.DoubleBorder()).
-	BorderForeground(colorCyan).Background(colorBgPanel).
+	BorderForeground(colorBorder).Background(colorBgPanel).
 	Padding(1, 2)
 
 var stylePopupTitle = lipgloss.NewStyle().Bold(true).Foreground(colorCyan).
