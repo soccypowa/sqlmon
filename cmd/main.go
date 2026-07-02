@@ -12,6 +12,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+var (
+	Version   = "dev"
+	BuildTime = ""
+	GitCommit = ""
+)
+
 func main() {
 	connStr := flag.String("conn", "", "SQL Server connection string\n"+
 		"  sqlserver://user:password@host[:port][/instance]\n"+
@@ -19,7 +25,13 @@ func main() {
 		"  For further information checkout: https://github.com/microsoft/go-mssqldb")
 	interval := flag.Duration("interval", 5*time.Second,
 		"How often to refresh data (e.g. 5s, 10s, 30s).")
+	version := flag.Bool("version", false, "Show version information and exit")
 	flag.Parse()
+
+	if *version {
+		fmt.Printf("sqlmon version %s (built %s commit %s)\n", Version, BuildTime, GitCommit)
+		os.Exit(0)
+	}
 
 	if *connStr == "" {
 		fmt.Fprintln(os.Stderr, "Error: provide --conn")
