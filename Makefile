@@ -29,4 +29,4 @@ listdepupdates:
 updatedeps:
 	@go get -u
 
-.PHONY: run tidy
+.PHONY: test run tidy build $(TARGETS) clean listdepupdates updatedeps
