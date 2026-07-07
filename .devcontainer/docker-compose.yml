@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  vscode:
+    build:
+      context: .
+      dockerfile: "Dockerfile"
+    volumes:
+      - ../..:/workspaces:cached
+    entrypoint: [ "zsh", "-c", "while sleep 1000; do :; done" ]
+    # Runs app on the same network as the database container, allows "forwardPorts" in devcontainer.json function.
+    network_mode: service:db
+  db:
+    image: mcr.microsoft.com/mssql/server
+    restart: unless-stopped
+    user: root
+    command: /bin/bash ./entrypoint.sh
+    volumes:
+      - ./entrypoint.sh:/entrypoint.sh:rw
+      - ./init.sh:/init.sh:rw
+      - ./dbcreation.sql:/dbcreation.sql:rw
+    env_file:
+      - .env
