@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/Soccypowa/sqlmon/Internal/db"
 	"github.com/Soccypowa/sqlmon/Internal/ui"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 var (
@@ -65,8 +65,6 @@ func main() {
 
 	p := tea.NewProgram(
 		ui.Newmodel(client, name, *interval),
-		tea.WithAltScreen(),
-		//tea.WithMouseCellMotion(),
 	)
 
 	// p.Run() starts the event loop and blocks until tea.Quit is sent.

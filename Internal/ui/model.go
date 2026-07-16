@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
 	"github.com/Soccypowa/sqlmon/Internal/db"
 	"github.com/atotto/clipboard"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 type Tab int
@@ -83,7 +83,7 @@ func Newmodel(client *db.Client, serverName string, interval time.Duration) Mode
 		serverName: serverName,
 		interval:   interval,
 		loading:    true,
-		viewPort:   viewport.New(0, 0),
+		viewPort:   viewport.New(viewport.WithWidth(0), viewport.WithHeight(0)),
 	}
 }
 
@@ -195,8 +195,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// The panel border adds 2 chars of horizontal padding on each
 		// side, so we subtract 4 from width; chromeHeight accounts for
 		// the rows consumed by header, separator, and footer.
-		m.viewPort.Width = m.width - 4
-		m.viewPort.Height = m.height - chromeHeight
+		m.viewPort.SetWidth(m.width - 4)
+		m.viewPort.SetHeight(m.height - chromeHeight)
 		m.viewPort.SetContent(m.buildContent())
 
 	// query result arrived
@@ -223,7 +223,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, fetchAllCmd(m.client), tickCmd(m.interval))
 
 	// When a key is pressed
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		// When the popup is open we only hande close keys
 		if m.showPopup {
 			switch msg.String() {
@@ -311,7 +311,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "right":
 			if m.activeTab == TabProcesses {
-				maxScroll := calculateMaxHScroll(m.viewPort.Width)
+				maxScroll := calculateMaxHScroll(m.viewPort.Width())
 				m.hScroll += hScrollStep
 				if m.hScroll > maxScroll {
 					m.hScroll = maxScroll
@@ -358,10 +358,11 @@ func (m Model) ensureVisible() {
 	const headerlines = 2
 	targetLine := m.selectedRow + headerlines
 
-	if targetLine < m.viewPort.YOffset {
-		m.viewPort.YOffset = targetLine
-	} else if targetLine >= m.viewPort.YOffset+m.viewPort.Height {
-		m.viewPort.YOffset = targetLine - m.viewPort.Height + 1
+	currentOffset := m.viewPort.YOffset()
+	if targetLine < currentOffset {
+		m.viewPort.SetYOffset(targetLine)
+	} else if targetLine >= currentOffset+m.viewPort.Height() {
+		m.viewPort.SetYOffset(targetLine - m.viewPort.Height() + 1)
 	}
 }
 
@@ -387,11 +388,11 @@ func (m Model) buildContent() string {
 
 	switch m.activeTab {
 	case TabProcesses:
-		return buildProcessTable(m.sessions, m.viewPort.Width, m.selectedRow, m.hScroll)
+		return buildProcessTable(m.sessions, m.viewPort.Width(), m.selectedRow, m.hScroll)
 	case TabWaits:
-		return buildWaitsTable(m.waits, m.viewPort.Width)
+		return buildWaitsTable(m.waits, m.viewPort.Width())
 	case TabExpensive:
-		return buildExpensiveTable(m.queries, m.viewPort.Width, m.selectedRow)
+		return buildExpensiveTable(m.queries, m.viewPort.Width(), m.selectedRow)
 	}
 
 	return ""
