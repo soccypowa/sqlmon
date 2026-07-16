@@ -5,18 +5,19 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/mattn/go-runewidth"
 )
 
-// View() converts the model into a string. Bubble Tea prints that
-// string to the terminal on every update. Think of it as a pure
-// function: same model → same output, no side effects.
+// View() converts the model into a tea.View. Bubble Tea renders that
+// content on every update. Think of it as a pure function: same model →
+// same output, no side effects.
 
-func (m Model) View() string {
+func (m Model) View() tea.View {
 	// If terminal has not reported the size do nothing
 	if m.width == 0 {
-		return ""
+		return tea.NewView("")
 	}
 
 	// Build normal screen
@@ -35,7 +36,9 @@ func (m Model) View() string {
 		screen = m.renderPopup(screen)
 	}
 
-	return screen
+	v := tea.NewView(screen)
+	v.AltScreen = true
+	return v
 }
 
 // KEY IDEA: lipgloss.Width() measures the *visible* width of a

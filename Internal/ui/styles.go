@@ -1,6 +1,10 @@
 package ui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"image/color"
+
+	"charm.land/lipgloss/v2"
+)
 
 var (
 	colorBg       = lipgloss.Color("#191a1b") // near-black background
@@ -100,7 +104,7 @@ func cpuBar(pct, width int) string {
 	}
 	filled := (pct * width) / 100
 
-	var filledColor lipgloss.Color
+	var filledColor color.Color
 	switch {
 	case pct >= 80:
 		filledColor = colorRed
