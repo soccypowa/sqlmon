@@ -149,7 +149,7 @@ FROM sys.dm_exec_sessions   AS s
 LEFT  JOIN sys.dm_exec_requests AS r  ON s.session_id = r.session_id
 OUTER APPLY sys.dm_exec_sql_text(r.sql_handle) AS t
 WHERE s.is_user_process = 1
-ORDER BY ISNULL(r.total_elapsed_time, 0) DESC`
+ORDER BY s.session_id`
 
 	rows, err := c.db.QueryContext(ctx, query)
 	if err != nil {
