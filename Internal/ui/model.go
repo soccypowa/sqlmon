@@ -204,15 +204,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		m.err = msg.err
 		if msg.err == nil {
-			// Cleanup selected row in case the session count srank
-			if m.selectedRow <= len(msg.sessions) && len(m.sessions) > 0 {
-				m.selectedRow = len(msg.sessions) - 1
-			}
 			m.sessions = msg.sessions
 			m.waits = msg.waits
 			m.queries = msg.queries
 			m.metrics = msg.metrics
 			m.fetchedAt = msg.fetchedAt
+
+			switch m.activeTab {
+			case TabProcesses:
+				if len(m.sessions) == 0 {
+					m.selectedRow = 0
+				} else if m.selectedRow >= len(m.sessions) {
+					m.selectedRow = len(m.sessions) - 1
+				}
+			case TabExpensive:
+				if len(m.queries) == 0 {
+					m.selectedRow = 0
+				} else if m.selectedRow >= len(m.queries) {
+					m.selectedRow = len(m.queries) - 1
+				}
+			default:
+				m.selectedRow = 0
+			}
 		}
 		m.viewPort.SetContent(m.buildContent())
 
