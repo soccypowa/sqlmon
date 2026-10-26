@@ -1,0 +1,79 @@
+name: Build
+
+on:
+    push:
+        branches: [main]
+        tags: ["v*"]
+    pull_request:
+
+permissions:
+    contents: read
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        strategy:
+            fail-fast: false
+            matrix:
+                goos: [darwin, linux, windows]
+                goarch: [arm64, amd64]
+        steps:
+            - uses: actions/checkout@v7
+
+            - uses: actions/setup-go@v7
+              with:
+                  go-version-file: go.mod
+                  cache: true
+
+            - name: Vet
+              run: go vet ./...
+
+            - name: Build
+              shell: bash
+              env:
+                  GOOS: ${{ matrix.goos }}
+                  GOARCH: ${{ matrix.goarch }}
+                  VERSION: ${{ github.ref_type == 'tag' && github.ref_name || 'dev' }}
+                  GIT_COMMIT: ${{ github.sha }}
+              run: |
+                  mkdir -p build
+                  EXT=""
+                  if [ "$GOOS" = "windows" ]; then EXT=".exe"; fi
+                  go build -trimpath -ldflags "-s -w -X main.Version=${VERSION} -X main.GitCommit=${GIT_COMMIT}" -o "build/sqlmon${EXT}" .
+
+            - name: Package
+              shell: bash
+              env:
+                  GOOS: ${{ matrix.goos }}
+                  GOARCH: ${{ matrix.goarch }}
+              run: |
+                  EXT=""
+                  if [ "$GOOS" = "windows" ]; then EXT=".exe"; fi
+                  zip -j "build/sqlmon-${GOOS}-${GOARCH}.zip" "build/sqlmon${EXT}"
+
+            - uses: actions/upload-artifact@v7
+              with:
+                  name: sqlmon-${{ matrix.goos }}-${{ matrix.goarch }}
+                  path: build/sqlmon*
+
+    release:
+        needs: build
+        if: startsWith(github.ref, 'refs/tags/v')
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+        steps:
+            - uses: actions/download-artifact@v8
+              with:
+                  pattern: sqlmon*
+                  merge-multiple: true
+
+            - name: Gnereate Checksums
+              run: sha256sum sqlmon*.zip > checksums.txt
+
+            - uses: softprops/action-gh-release@v3
+              with:
+                  files: |
+                      sqlmon*.zip
+                      checksums.txt
+                  generate_release_notes: true
