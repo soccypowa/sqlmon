@@ -39,7 +39,7 @@ jobs:
                   mkdir -p build
                   EXT=""
                   if [ "$GOOS" = "windows" ]; then EXT=".exe"; fi
-                  go build -trimpath -ldflags "-s -w -X main.Version=${VERSION} -X main.GitCommit=${GIT_COMMIT}" -o "build/sqlmon${EXT}" .
+                  go build -trimpath -ldflags "-s -w -X main.Version=${VERSION} -X main.GitCommit=${GIT_COMMIT}" -o "build/sqlmon${EXT}" ./cmd
 
             - name: Package
               shell: bash
